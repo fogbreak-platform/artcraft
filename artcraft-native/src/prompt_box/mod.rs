@@ -260,19 +260,41 @@ fn info_banner(ui: &mut Ui, text: &str) {
 
 /// Files dragged over the window: an overlay on the box, and the drop when released.
 fn drop_target(ui: &mut Ui, props: &PromptBoxProps<'_>, rect: Rect, actions: &mut Vec<PromptBoxAction>) {
+  let inbox_id = props.id.with("dropped-bytes");
+  #[derive(Clone, Default)]
+  struct DroppedBytesInbox(std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>);
+  let inbox = ui.ctx().data_mut(|d| d.get_temp_mut_or_default::<DroppedBytesInbox>(inbox_id).clone());
+  if let Ok(mut queued) = inbox.0.lock() {
+    if !queued.is_empty() {
+      actions.push(PromptBoxAction::DroppedBytes(std::mem::take(&mut *queued)));
+    }
+  }
   let (hovered, dropped) = ui.input(|i| (i.raw.hovered_files.clone(), i.raw.dropped_files.clone()));
   if !dropped.is_empty() {
     let mut paths = Vec::new();
-    let mut byte_files = Vec::new();
     for file in dropped {
-      if let Some(bytes) = file.bytes {
-        let name = if !file.name.is_empty() {
-          file.name
-        } else {
-          file.path.as_deref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("dropped.png").to_owned()
-        };
-        byte_files.push((name, bytes.to_vec()));
-      } else {
+      #[cfg(target_arch = "wasm32")]
+      {
+        let name = file
+          .path()
+          .file_name()
+          .and_then(|n| n.to_str())
+          .filter(|s| !s.is_empty())
+          .unwrap_or("dropped.png")
+          .to_owned();
+        let ctx = ui.ctx().clone();
+        let inbox = inbox.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+          if let Ok(bytes) = egui::DroppedFile::bytes_async(file.as_ref()).await {
+            if let Ok(mut guard) = inbox.0.lock() {
+              guard.push((name, bytes));
+            }
+            ctx.request_repaint();
+          }
+        });
+      }
+      #[cfg(not(target_arch = "wasm32"))]
+      {
         let path = file.path().to_path_buf();
         if !path.as_os_str().is_empty() {
           paths.push(path);
@@ -282,15 +304,27 @@ fn drop_target(ui: &mut Ui, props: &PromptBoxProps<'_>, rect: Rect, actions: &mu
     if !paths.is_empty() {
       actions.push(PromptBoxAction::DroppedFiles(paths));
     }
-    if !byte_files.is_empty() {
-      actions.push(PromptBoxAction::DroppedBytes(byte_files));
-    }
     return;
   }
   if hovered.is_empty() {
     return;
   }
-  let kinds: Vec<Option<RefKind>> = hovered.iter().map(|f| f.path.as_deref().and_then(RefKind::from_path).or_else(|| (!f.name.is_empty()).then(|| RefKind::from_name(&f.name)).flatten())).collect();
+  let kinds: Vec<Option<RefKind>> = hovered
+    .iter()
+    .map(|f| {
+      f.path.as_deref().and_then(RefKind::from_path).or_else(|| {
+        if f.mime.starts_with("image/") {
+          Some(RefKind::Image)
+        } else if f.mime.starts_with("video/") {
+          Some(RefKind::Video)
+        } else if f.mime.starts_with("audio/") {
+          Some(RefKind::Audio)
+        } else {
+          None
+        }
+      })
+    })
+    .collect();
   // Without paths or filenames we can't tell yet: assume it fits.
   let accepted = kinds.iter().all(|k| k.is_none() || k.is_some_and(|k| props.accepts.contains(&k))) && !props.accepts.is_empty();
   let keyframes = matches!(props.deck, DeckMode::Keyframes { .. });
