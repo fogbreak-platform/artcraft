@@ -571,7 +571,7 @@ fn bind_handoff(host: &Object, inner: &Rc<RefCell<BridgeInner>>) {
 fn enqueue_promise(state: &Rc<RefCell<BridgeInner>>, method: String, params: Value) -> Promise {
   Promise::new(&mut |resolve, reject| {
     let mut st = state.borrow_mut();
-    st.queue.push(PendingCall { method, params, resolve, reject });
+    st.queue.push(PendingCall { method: method.clone(), params: params.clone(), resolve, reject });
     if let Some(ctx) = &st.ctx {
       ctx.request_repaint();
     }
