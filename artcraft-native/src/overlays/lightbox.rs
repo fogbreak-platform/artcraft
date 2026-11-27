@@ -124,10 +124,10 @@ impl Lightbox {
           let fit = fit_inside(t.size_vec2(), rect.shrink(8.0).size());
           egui::Image::new(&t).paint_at(ui, Rect::from_center_size(rect.center(), fit));
         }
-        icons::paint_spinner(ui, Rect::from_center_size(rect.center(), vec2(32.0, 32.0)), theme::MUTED);
+        icons::paint_spinner(ui, Rect::from_center_size(rect.center(), vec2(32.0, 32.0)), theme::muted());
       },
       _ => {
-        ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Image not available", FontId::new(14.0, egui::FontFamily::Proportional), theme::FAINT);
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Image not available", FontId::new(14.0, egui::FontFamily::Proportional), theme::faint());
       },
     }
     if item.kind == MediaKind::Video {
@@ -164,7 +164,7 @@ impl Lightbox {
 
   fn side(&mut self, ui: &mut Ui, item: &FeedItem, prompt: Option<&Prompt>, names: &dyn ModelNames, cache: &mut MediaCache, actions: &mut Vec<LightboxAction>) {
     ui.horizontal(|ui| {
-      widgets::hud(ui, item.kind.label(), theme::MUTED);
+      widgets::hud(ui, item.kind.label(), theme::muted());
       ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if widgets::ghost(ui, Icon::X, None, "Close", false).clicked() {
           actions.push(LightboxAction::Close);
@@ -174,7 +174,7 @@ impl Lightbox {
     ui.add_space(8.0);
     let text = prompt.and_then(|p| p.maybe_positive_prompt.clone()).filter(|t| !t.is_empty());
     ui.horizontal(|ui| {
-      widgets::hud(ui, "Prompt", theme::FAINT);
+      widgets::hud(ui, "Prompt", theme::faint());
       if let Some(t) = &text {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
           if ui.add(egui::Button::new(egui::RichText::new("Copy").size(11.0)).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -185,7 +185,7 @@ impl Lightbox {
     });
     match (&text, item.prompt_token.is_some(), prompt.is_some()) {
       (Some(t), _, _) => {
-        let mut job = egui::text::LayoutJob::simple(t.clone(), FontId::new(13.0, egui::FontFamily::Proportional), theme::INK, ui.available_width());
+        let mut job = egui::text::LayoutJob::simple(t.clone(), FontId::new(13.0, egui::FontFamily::Proportional), theme::ink(), ui.available_width());
         if !self.prompt_expanded {
           job.wrap.max_rows = 4;
         }
@@ -194,26 +194,26 @@ impl Lightbox {
         ui.label(galley);
         if clipped || self.prompt_expanded {
           let label = if self.prompt_expanded { "Hide" } else { "See all" };
-          if ui.add(egui::Button::new(egui::RichText::new(label).size(11.5).color(theme::ACCENT_INK)).frame(false)).clicked() {
+          if ui.add(egui::Button::new(egui::RichText::new(label).size(11.5).color(theme::accent_ink())).frame(false)).clicked() {
             self.prompt_expanded = !self.prompt_expanded;
           }
         }
       },
       (None, true, false) => {
         let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-        icons::paint_spinner(ui, rect, theme::FAINT);
+        icons::paint_spinner(ui, rect, theme::faint());
       },
       _ => {
-        ui.label(egui::RichText::new("No prompt").size(13.0).color(theme::FAINT));
+        ui.label(egui::RichText::new("No prompt").size(13.0).color(theme::faint()));
       },
     }
     ui.add_space(14.0);
-    widgets::hud(ui, "Information", theme::FAINT);
+    widgets::hud(ui, "Information", theme::faint());
     ui.add_space(4.0);
     if let Some(model) = item.model_id.as_deref() {
       info_row(ui, "Model", |ui| {
         let tex = creator_icons::texture(ui.ctx(), &names.creator(model));
-        ui.add(egui::Image::new(&tex).tint(theme::INK).fit_to_exact_size(vec2(13.0, 13.0)));
+        ui.add(egui::Image::new(&tex).tint(theme::ink()).fit_to_exact_size(vec2(13.0, 13.0)));
         ui.label(egui::RichText::new(names.display_name(model)).size(12.5));
       });
     }
@@ -275,7 +275,7 @@ impl Lightbox {
     let close = widgets::modal(ctx, Id::new("lightbox-delete"), 420.0, |ui| {
       ui.label(widgets::heading("Delete this media?", 20.0));
       ui.add_space(8.0);
-      ui.label(egui::RichText::new("This will permanently remove the media from your library. This action cannot be undone.").color(theme::MUTED));
+      ui.label(egui::RichText::new("This will permanently remove the media from your library. This action cannot be undone.").color(theme::muted()));
       ui.add_space(16.0);
       ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if widgets::button(ui, None, "Delete", widgets::Kind::Danger, 0.0, theme::CONTROL_H).clicked() {
@@ -299,7 +299,7 @@ impl Lightbox {
 fn audio_panel(ui: &mut Ui, rect: Rect, item: &FeedItem, audio: &mut AudioPlayer) {
   let width = (rect.width() - 48.0).min(AUDIO_PANEL_MAX);
   let panel = Rect::from_center_size(rect.center(), vec2(width, AUDIO_PANEL_PAD * 2.0 + 64.0 + 20.0 + 44.0));
-  ui.painter().rect(panel, theme::RADIUS, theme::fade(theme::CONTROLS, 0.6), theme::hairline(), egui::StrokeKind::Inside);
+  ui.painter().rect(panel, theme::RADIUS, theme::fade(theme::controls(), 0.6), theme::hairline(), egui::StrokeKind::Inside);
   waveform::music_tile(ui, Rect::from_center_size(pos2(panel.center().x, panel.top() + AUDIO_PANEL_PAD + 32.0), vec2(64.0, 64.0)), false);
   let bar = Rect::from_min_max(pos2(panel.left() + AUDIO_PANEL_PAD, panel.bottom() - AUDIO_PANEL_PAD - 44.0), pos2(panel.right() - AUDIO_PANEL_PAD, panel.bottom() - AUDIO_PANEL_PAD));
   let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar));
@@ -309,7 +309,7 @@ fn audio_panel(ui: &mut Ui, rect: Rect, item: &FeedItem, audio: &mut AudioPlayer
 fn info_row(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
   ui.horizontal(|ui| {
     let (rect, _) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::hover());
-    ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, label, FontId::new(12.0, egui::FontFamily::Proportional), theme::MUTED);
+    ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, label, FontId::new(12.0, egui::FontFamily::Proportional), theme::muted());
     value(ui);
   });
 }

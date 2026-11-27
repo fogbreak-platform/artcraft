@@ -116,15 +116,15 @@ pub fn reference_deck(ui: &mut Ui, id: Id, refs: &References, limits: &DeckLimit
     if items.len() > 3 {
       let badge_text = items.len().to_string();
       let badge = Rect::from_center_size(pos2(stack.right() + 2.0, stack.top() + 2.0), vec2(8.0 + 7.0 * badge_text.len() as f32, 18.0));
-      painter.rect_filled(badge, CornerRadius::same(9), theme::ACCENT);
+      painter.rect_filled(badge, CornerRadius::same(9), theme::accent());
       painter.text(badge.center(), Align2::CENTER_CENTER, badge_text, FontId::new(10.0, theme::semibold()), Color32::WHITE);
     }
     if !open_kinds.is_empty() {
       let plus = Rect::from_min_size(pos2(stack.right() - 12.0, stack.bottom() - 20.0), vec2(24.0, 24.0));
       let resp = ui.interact(plus, id.with("plus"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
       let hovered = resp.hovered();
-      painter.circle(plus.center(), if hovered { 13.0 } else { 12.0 }, widgets::blend(theme::CONTROLS, if hovered { theme::WASH_HOVER } else { Color32::TRANSPARENT }), Stroke::new(1.0, theme::LINE));
-      icons::paint(&painter, plus.shrink(6.0), Icon::Plus, theme::INK);
+      painter.circle(plus.center(), if hovered { 13.0 } else { 12.0 }, widgets::blend(theme::controls(), if hovered { theme::wash_hover() } else { Color32::TRANSPARENT }), Stroke::new(1.0, theme::line()));
+      icons::paint(&painter, plus.shrink(6.0), Icon::Plus, theme::ink());
       if resp.clicked() {
         actions.push(DeckAction::Upload { kinds: open_kinds.clone(), slot: ImageSlot::Reference });
       }
@@ -198,7 +198,7 @@ fn slot_card(ui: &mut Ui, id: Id, item: Option<&RefMedia>, label: &str, tilt: f3
           }
         }
         let (label_rect, _) = ui.allocate_exact_size(vec2(CARD, 10.0), Sense::hover());
-        ui.painter().text(label_rect.center(), Align2::CENTER_CENTER, label, FontId::new(9.0, theme::medium()), theme::MUTED);
+        ui.painter().text(label_rect.center(), Align2::CENTER_CENTER, label, FontId::new(9.0, theme::medium()), theme::muted());
       },
       None => {
         let resp = add_tile(ui, id, label, tilt);
@@ -220,7 +220,7 @@ fn expanded_panel(ui: &mut Ui, id: Id, refs: &References, items: &[&RefMedia], o
   if items.len() > 1 {
     ui.horizontal(|ui| {
       let n = items.len();
-      ui.label(egui::RichText::new(format!("{n} reference{}", if n == 1 { "" } else { "s" })).size(11.0).family(theme::medium()).color(theme::MUTED));
+      ui.label(egui::RichText::new(format!("{n} reference{}", if n == 1 { "" } else { "s" })).size(11.0).family(theme::medium()).color(theme::muted()));
       ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let resp = ui.add(egui::Button::new(egui::RichText::new("Clear all").size(11.0)).frame(false));
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -296,7 +296,7 @@ fn expanded_panel(ui: &mut Ui, id: Id, refs: &References, items: &[&RefMedia], o
 fn paint_card(ui: &Ui, painter: &egui::Painter, rect: Rect, tilt: f32, item: &RefMedia, cache: &mut MediaCache, hovered: bool) {
   let rot = Rot2::from_angle(tilt.to_radians());
   let corners = rotated_corners(rect, rot);
-  painter.add(Shape::convex_polygon(corners.to_vec(), theme::fade(theme::CONTROLS, 0.95), Stroke::NONE));
+  painter.add(Shape::convex_polygon(corners.to_vec(), theme::fade(theme::controls(), 0.95), Stroke::NONE));
   let texture = item.preview.as_deref().and_then(|key| match cache.get(ui.ctx(), key) {
     Lookup::Ready(t) => Some(t),
     _ => None,
@@ -316,7 +316,7 @@ fn paint_card(ui: &Ui, painter: &egui::Painter, rect: Rect, tilt: f32, item: &Re
         RefKind::Audio if playing => Icon::Volume,
         RefKind::Audio => Icon::Play,
       };
-      icons::paint(painter, Rect::from_center_size(rect.center(), vec2(20.0, 20.0)), icon, if playing { theme::ACCENT_INK } else { theme::MUTED });
+      icons::paint(painter, Rect::from_center_size(rect.center(), vec2(20.0, 20.0)), icon, if playing { theme::accent_ink() } else { theme::muted() });
     },
   }
   if item.kind != RefKind::Image && tilt == 0.0 {
@@ -354,7 +354,7 @@ fn remove_button(ui: &mut Ui, id: Id, card: Rect, card_hovered: bool) -> bool {
   if !(card_hovered || resp.hovered()) {
     return false;
   }
-  let fill = if resp.hovered() { theme::fade(theme::DANGER, 0.7) } else { Color32::from_black_alpha(128) };
+  let fill = if resp.hovered() { theme::fade(theme::danger(), 0.7) } else { Color32::from_black_alpha(128) };
   ui.painter().circle_filled(rect.center(), 10.0, fill);
   icons::paint(ui.painter(), rect.shrink(5.0), Icon::X, Color32::WHITE);
   resp.on_hover_text("Remove").on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
@@ -372,18 +372,18 @@ fn add_tile(ui: &mut Ui, id: Id, label: &str, tilt: f32) -> Response {
 fn paint_dashed_tile(painter: &egui::Painter, rect: Rect, tilt: f32, hovered: bool, label: Option<&str>) {
   let rot = Rot2::from_angle(tilt.to_radians());
   let corners = rotated_corners(rect, rot);
-  let fill = theme::fade(theme::CONTROLS, if hovered { 0.6 } else { 0.4 });
+  let fill = theme::fade(theme::controls(), if hovered { 0.6 } else { 0.4 });
   painter.add(Shape::convex_polygon(corners.to_vec(), fill, Stroke::NONE));
   let mut path = corners.to_vec();
   path.push(corners[0]);
-  painter.extend(Shape::dashed_line(&path, Stroke::new(2.0, theme::LINE_DASHED), 4.0, 3.0));
+  painter.extend(Shape::dashed_line(&path, Stroke::new(2.0, theme::line_dashed()), 4.0, 3.0));
   let c = rect.center();
   match label {
     Some(label) => {
-      icons::paint(painter, Rect::from_center_size(c - vec2(0.0, 6.0), vec2(18.0, 18.0)), Icon::Plus, theme::fade(theme::INK, 0.8));
-      painter.text(c + vec2(0.0, 12.0), Align2::CENTER_CENTER, label, FontId::new(8.5, theme::medium()), theme::fade(theme::INK, 0.7));
+      icons::paint(painter, Rect::from_center_size(c - vec2(0.0, 6.0), vec2(18.0, 18.0)), Icon::Plus, theme::fade(theme::ink(), 0.8));
+      painter.text(c + vec2(0.0, 12.0), Align2::CENTER_CENTER, label, FontId::new(8.5, theme::medium()), theme::fade(theme::ink(), 0.7));
     },
-    None => icons::paint(painter, Rect::from_center_size(c, vec2(20.0, 20.0)), Icon::Plus, theme::fade(theme::INK, 0.8)),
+    None => icons::paint(painter, Rect::from_center_size(c, vec2(20.0, 20.0)), Icon::Plus, theme::fade(theme::ink(), 0.8)),
   }
 }
 
@@ -447,10 +447,10 @@ fn hover_menu(ui: &Ui, id: Id, trigger: &Response, groups: &[MenuGroup], actions
       for group in groups {
         if show_groups {
           ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(group.kind.noun().to_uppercase()).size(10.0).family(theme::semibold()).color(theme::FAINT));
+            ui.label(egui::RichText::new(group.kind.noun().to_uppercase()).size(10.0).family(theme::semibold()).color(theme::faint()));
             if let Some(hint) = &group.hint {
               ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(hint).size(10.0).family(theme::medium()).color(theme::FAINT));
+                ui.label(egui::RichText::new(hint).size(10.0).family(theme::medium()).color(theme::faint()));
               });
             }
           });
@@ -473,10 +473,10 @@ fn menu_entry(ui: &mut Ui, icon: Icon, label: &str) -> bool {
   let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
   let p = ui.painter();
   if resp.hovered() {
-    p.rect_filled(rect, theme::RADIUS, theme::WASH_HOVER);
+    p.rect_filled(rect, theme::RADIUS, theme::wash_hover());
   }
-  icons::paint(p, Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), vec2(14.0, 14.0)), icon, theme::fade(theme::INK, 0.6));
-  p.text(pos2(rect.left() + 34.0, rect.center().y), Align2::LEFT_CENTER, label, FontId::new(13.0, theme::medium()), theme::INK);
+  icons::paint(p, Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), vec2(14.0, 14.0)), icon, theme::fade(theme::ink(), 0.6));
+  p.text(pos2(rect.left() + 34.0, rect.center().y), Align2::LEFT_CENTER, label, FontId::new(13.0, theme::medium()), theme::ink());
   resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 

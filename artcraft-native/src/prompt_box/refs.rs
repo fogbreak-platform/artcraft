@@ -21,7 +21,7 @@ impl RefKind {
     }
   }
 
-  /// Which kind a file is, by extension (the webapp's drop routing lists).
+  /// Which kind a file is, by extension (the drop routing lists).
   pub fn from_path(path: &std::path::Path) -> Option<Self> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
@@ -30,6 +30,11 @@ impl RefKind {
       "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "opus" => Some(RefKind::Audio),
       _ => None,
     }
+  }
+
+  /// Which kind a filename is, by extension.
+  pub fn from_name(name: &str) -> Option<Self> {
+    Self::from_path(std::path::Path::new(name))
   }
 }
 

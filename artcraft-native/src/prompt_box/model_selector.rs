@@ -168,10 +168,10 @@ impl Rows<'_> {
 /// The provider's logo on a chip at the row's right; on the brand blue for the selected model.
 fn provider_chip(ui: &Ui, row: Rect, provider: Provider, selected: bool) {
   let chip = Rect::from_center_size(pos2(row.right() - 22.0, row.center().y), vec2(26.0, 20.0));
-  let fill = if selected { theme::fade(theme::ACCENT, 0.6) } else { theme::WASH };
+  let fill = if selected { theme::fade(theme::accent(), 0.6) } else { theme::wash() };
   ui.painter().rect_filled(chip, theme::RADIUS, fill);
   let tex = creator_icons::texture(ui.ctx(), provider.icon());
-  egui::Image::new(&tex).tint(theme::INK).paint_at(ui, Rect::from_center_size(chip.center(), vec2(12.0, 12.0)));
+  egui::Image::new(&tex).tint(theme::ink()).paint_at(ui, Rect::from_center_size(chip.center(), vec2(12.0, 12.0)));
 }
 
 /// "Select Provider" (`ProviderTooltipContent`), to the right of a model's row.
@@ -186,7 +186,7 @@ fn provider_flyout(ui: &Ui, id: Id, row: Rect, allowed: &[Provider], current: Pr
         let selected = provider == current;
         let resp = widgets::menu_row(ui, RowLead::SmallLogo(&tex), provider.label(), None, selected, false, false);
         if selected {
-          ui.painter().vline(resp.rect.left() + 1.5, resp.rect.y_range(), Stroke::new(3.0, theme::ACCENT));
+          ui.painter().vline(resp.rect.left() + 1.5, resp.rect.y_range(), Stroke::new(3.0, theme::accent()));
         }
         if resp.clicked() {
           picked = Some(provider);
@@ -213,7 +213,7 @@ fn capability_badges(m: &ModelInfo) -> String {
 }
 
 /// The provider submenu headlessly (egui_kittest).
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
   use egui_kittest::Harness;
   use egui_kittest::kittest::Queryable;
@@ -238,7 +238,7 @@ mod tests {
       harness.step();
     }
     harness.run();
-    assert!(harness.query_by_label("ArtCraft").is_some(), "the submenu lists the providers");
+    assert!(harness.query_by_label("Fogbreak Hub").is_some(), "the submenu lists the providers");
     harness.get_by_label("FAL").click();
     harness.run();
     assert_eq!(harness.state().picked, vec![("nano_banana_pro".to_owned(), Some(Provider::Fal))]);

@@ -2,10 +2,15 @@
 //! waiting for them and page requests to the services that fulfil them.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use egui::{Id, Ui};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::backend::audio::AudioPlayer;
 use crate::backend::media_cache::MediaCache;
@@ -41,7 +46,7 @@ macro_rules! env {
   };
 }
 
-const STORAGE_KEY: &str = "artcraft-native";
+const STORAGE_KEY: &str = "fogbreak-hub";
 const JOB_POLL_INTERVAL: f64 = 5.0;
 const CREDITS_INTERVAL: f64 = 60.0;
 const MODEL_RETRY_INTERVAL: f64 = 15.0;
@@ -49,6 +54,54 @@ const MODEL_RETRY_INTERVAL: f64 = 15.0;
 const PROMPT_FETCHES_PER_FRAME: usize = 8;
 /// Every create page's model listing.
 const MODALITIES: [Modality; 3] = [Modality::Image, Modality::Video, Modality::Audio];
+
+#[derive(Clone, Copy, Debug)]
+pub struct CommandSpec {
+  pub id: &'static str,
+  pub label: &'static str,
+  pub menu: &'static str,
+  pub shortcut: Option<&'static str>,
+  pub params: &'static str,
+}
+
+pub const COMMANDS: &[CommandSpec] = &[
+  CommandSpec { id: "nav.home", label: "Go to Home", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.image", label: "Go to Create Image", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.video", label: "Go to Create Video", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.audio", label: "Go to Create Audio", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.library", label: "Go to Library", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.toggle_sidebar", label: "Toggle Sidebar", menu: "Navigate", shortcut: None, params: "{}" },
+  CommandSpec { id: "nav.page", label: "Navigate to Page", menu: "Navigate", shortcut: None, params: "{\"slug\":\"home|image|video|audio|library\"}" },
+  CommandSpec { id: "prompt.set", label: "Set Active Prompt", menu: "Prompt", shortcut: None, params: "{\"prompt\":\"string\",\"page?\":\"image|video|audio\"}" },
+  CommandSpec { id: "prompt.clear", label: "Clear Prompt & References", menu: "Prompt", shortcut: None, params: "{}" },
+  CommandSpec { id: "prompt.generate", label: "Generate on Active Page", menu: "Prompt", shortcut: None, params: "{}" },
+  CommandSpec { id: "model.select", label: "Select Model", menu: "Prompt", shortcut: None, params: "{\"model\":\"string\",\"modality?\":\"image|video|audio\",\"provider?\":\"artcraft|fal|midjourney\"}" },
+  CommandSpec { id: "image.set", label: "Update Image Settings", menu: "Create", shortcut: None, params: "{\"aspect_ratio?\":\"string\",\"resolution?\":\"string\",\"quality?\":\"string\",\"count?\":1}" },
+  CommandSpec { id: "video.set", label: "Update Video Settings", menu: "Create", shortcut: None, params: "{\"input_mode?\":\"keyframe|reference\",\"aspect_ratio?\":\"string\",\"resolution?\":\"string\",\"duration?\":5,\"generate_audio?\":true,\"count?\":1}" },
+  CommandSpec { id: "audio.set", label: "Update Audio Settings", menu: "Create", shortcut: None, params: "{\"style_prompt?\":\"string\",\"instrumental?\":false,\"bpm?\":120,\"musical_key?\":\"string\"}" },
+  CommandSpec { id: "view.grid", label: "Switch Feed to Grid View", menu: "View", shortcut: None, params: "{}" },
+  CommandSpec { id: "view.list", label: "Switch Feed to List View", menu: "View", shortcut: None, params: "{}" },
+  CommandSpec { id: "view.autoplay", label: "Set Video Preview Autoplay", menu: "View", shortcut: None, params: "{\"enabled?\":true}" },
+  CommandSpec { id: "view.select_mode", label: "Toggle Selection Mode", menu: "View", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.sign_in", label: "Open Sign-In Dialog", menu: "Session", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.sign_out", label: "Sign Out", menu: "Session", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.settings", label: "Open Settings Dialog", menu: "Session", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.characters", label: "Open Characters Dialog", menu: "Session", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.close_overlays", label: "Close Active Modals", menu: "View", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.lightbox.open", label: "Open Lightbox", menu: "View", shortcut: None, params: "{\"token\":\"string\",\"kind?\":\"image|video|audio\"}" },
+  CommandSpec { id: "ui.lightbox.close", label: "Close Lightbox", menu: "View", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.theme", label: "Get or Set Theme", menu: "View", shortcut: None, params: "{\"mode?\":\"dark|light\",\"dark?\":true}" },
+  CommandSpec { id: "media.recreate", label: "Recreate Prompt from Media", menu: "Media", shortcut: None, params: "{\"token\":\"string\",\"kind?\":\"image|video\"}" },
+  CommandSpec { id: "media.make_video", label: "Make Video from Image", menu: "Media", shortcut: None, params: "{\"token\":\"string\"}" },
+  CommandSpec { id: "media.download", label: "Download Media Item(s)", menu: "Media", shortcut: None, params: "{\"tokens\":[\"string\"]}" },
+  CommandSpec { id: "media.refresh_library", label: "Refresh Session & Models", menu: "Media", shortcut: None, params: "{}" },
+  CommandSpec { id: "doc.inspect", label: "Inspect Workspace State", menu: "Inspect", shortcut: None, params: "{\"detail?\":\"summary|full\"}" },
+  CommandSpec { id: "ui.inspect", label: "Inspect UI Layout & Controls", menu: "Inspect", shortcut: None, params: "{}" },
+  CommandSpec { id: "ui.screenshot", label: "Capture Viewport Screenshot", menu: "Inspect", shortcut: None, params: "{}" },
+  CommandSpec { id: "io.formats", label: "List Supported Import/Export Formats", menu: "IO", shortcut: None, params: "{}" },
+  CommandSpec { id: "io.import", label: "Import Reference Media or Workspace JSON", menu: "IO", shortcut: None, params: "{\"name\":\"string\",\"bytes_base64|text|data\":\"...\"}" },
+  CommandSpec { id: "io.export", label: "Export Workspace Snapshot JSON", menu: "IO", shortcut: None, params: "{\"format?\":\"json|txt\",\"download?\":false}" },
+];
 
 /// Preferences that survive restarts.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -111,7 +164,10 @@ pub struct ArtcraftApp {
   fal_key_input: String,
   preview: Option<String>,
   requests: Vec<AppRequest>,
+  #[cfg(not(target_arch = "wasm32"))]
   screenshot: Option<ScreenshotRequest>,
+  pending_screenshots: Vec<Sender<Result<Value, String>>>,
+  revision: u64,
   next_poll: f64,
   next_credits: f64,
   models_retry_at: Option<f64>,
@@ -122,19 +178,80 @@ impl ArtcraftApp {
     theme::apply(&cc.egui_ctx);
     egui_extras::install_image_loaders(&cc.egui_ctx);
     let mut saved: Saved = cc.storage.and_then(|s| eframe::get_value(s, STORAGE_KEY)).unwrap_or_default();
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(page) = std::env::var("ARTCRAFT_PAGE").ok().and_then(|p| Page::from_slug(&p)) {
       saved.page = page;
     }
+    #[cfg(target_arch = "wasm32")]
+    if let Some(search) = web_sys::window().and_then(|w| w.location().search().ok()) {
+      for pair in search.trim_start_matches('?').split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+          if k == "page" {
+            if let Some(page) = Page::from_slug(v.trim()) {
+              saved.page = page;
+            }
+          }
+        }
+      }
+    }
     let backend = Backend::new(cc.egui_ctx.clone());
+    #[cfg(not(target_arch = "wasm32"))]
     let cache = MediaCache::new(backend.runtime(), backend.http());
+    #[cfg(target_arch = "wasm32")]
+    let cache = MediaCache::new();
+    #[cfg(not(target_arch = "wasm32"))]
     let player = AudioPlayer::new(backend.runtime(), backend.http());
+    #[cfg(target_arch = "wasm32")]
+    let player = AudioPlayer::new();
     for modality in MODALITIES {
       backend.load_models(modality);
     }
     backend.refresh_session();
-    let mut app = Self { cache, player, toasts: Toasts::default(), catalog: Catalog::default(), user: None, credits: None, page: saved.page, enter_to_generate: saved.enter_to_generate, view_mode: saved.view_mode, autoplay: saved.autoplay, sidebar_open: saved.sidebar_open, image: CreateImagePage::new(saved.image), video: CreateVideoPage::new(saved.video), audio: CreateAudioPage::new(saved.audio), library: FeedStore::default(), ratios: RatioCache::default(), prompts: HashMap::new(), prompt_records: HashMap::new(), requested_prompts: HashSet::new(), pending_recreate: None, batch_kinds: HashMap::new(), lightbox: None, picker: None, login: None, characters_modal: None, characters: Vec::new(), pending_characters: Vec::new(), settings_open: false, provider_setup: None, midjourney_login: None, fal_key_input: String::new(), preview: None, requests: Vec::new(), screenshot: ScreenshotRequest::from_env(), next_poll: 0.0, next_credits: CREDITS_INTERVAL, models_retry_at: None, backend };
+    let mut app = Self {
+      cache,
+      player,
+      toasts: Toasts::default(),
+      catalog: Catalog::default(),
+      user: None,
+      credits: None,
+      page: saved.page,
+      enter_to_generate: saved.enter_to_generate,
+      view_mode: saved.view_mode,
+      autoplay: saved.autoplay,
+      sidebar_open: saved.sidebar_open,
+      image: CreateImagePage::new(saved.image),
+      video: CreateVideoPage::new(saved.video),
+      audio: CreateAudioPage::new(saved.audio),
+      library: FeedStore::default(),
+      ratios: RatioCache::default(),
+      prompts: HashMap::new(),
+      prompt_records: HashMap::new(),
+      requested_prompts: HashSet::new(),
+      pending_recreate: None,
+      batch_kinds: HashMap::new(),
+      lightbox: None,
+      picker: None,
+      login: None,
+      characters_modal: None,
+      characters: Vec::new(),
+      pending_characters: Vec::new(),
+      settings_open: false,
+      provider_setup: None,
+      midjourney_login: None,
+      fal_key_input: String::new(),
+      preview: None,
+      requests: Vec::new(),
+      #[cfg(not(target_arch = "wasm32"))]
+      screenshot: ScreenshotRequest::from_env(),
+      pending_screenshots: Vec::new(),
+      revision: 1,
+      next_poll: 0.0,
+      next_credits: CREDITS_INTERVAL,
+      models_retry_at: None,
+      backend,
+    };
     app.restore_provider_jobs();
-    // Diagnostics: `ARTCRAFT_OPEN=settings` or `midjourney-login` opens that dialog at launch.
+    #[cfg(not(target_arch = "wasm32"))]
     match std::env::var("ARTCRAFT_OPEN").as_deref() {
       Ok("settings") => app.settings_open = true,
       Ok("midjourney-login") => app.account_action(AccountAction::ConnectMidjourney),
@@ -405,7 +522,7 @@ impl ArtcraftApp {
         ctx.copy_text(text);
         self.toasts.success("Prompt copied");
       },
-      AppRequest::Download(tokens) => self.download(&tokens),
+      AppRequest::Download(tokens) => self.download(ctx, &tokens),
       AppRequest::Preview(url) => self.preview = Some(url),
       AppRequest::ToggleAudio { ref_id, url } => self.player.toggle(ctx, &format!("ref:{ref_id}"), &url),
       AppRequest::OpenCharacters => {
@@ -417,9 +534,12 @@ impl ArtcraftApp {
         self.characters_modal = Some(CharactersModal::new());
       },
       AppRequest::PlayExternally(url) => {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Err(err) = open::that(&url) {
           self.toasts.error(format!("Couldn't open the file: {err}"));
         }
+        #[cfg(target_arch = "wasm32")]
+        ctx.open_url(egui::OpenUrl::new_tab(&url));
       },
       AppRequest::LoadMoreLibrary(key) => {
         let Some(user) = &self.user else {
@@ -448,8 +568,9 @@ impl ArtcraftApp {
     }
   }
 
-  fn download(&mut self, tokens: &[String]) {
+  fn download(&mut self, _ctx: &egui::Context, tokens: &[String]) {
     let items: Vec<FeedItem> = tokens.iter().filter_map(|t| self.find_item(t).cloned()).collect();
+    #[cfg(not(target_arch = "wasm32"))]
     match items.as_slice() {
       [] => {},
       [item] => {
@@ -469,6 +590,18 @@ impl ArtcraftApp {
           }
         }
       },
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+      for item in &items {
+        self.backend.save_url(item.full_url.clone(), PathBuf::from(file_name_for(item)));
+      }
+      if items.len() > 1 {
+        for feed in self.feeds_mut() {
+          feed.selecting = false;
+          feed.selected.clear();
+        }
+      }
     }
   }
 
@@ -572,9 +705,9 @@ impl ArtcraftApp {
   /// The title bar and the sidebar (both on the window chrome).
   fn shell(&mut self, ui: &mut Ui) {
     let account = Account { username: self.user.as_ref().map(|u| u.username.as_str()), display_name: self.user.as_ref().map(|u| u.display_name.as_str()).filter(|n| !n.is_empty()), credits: self.credits };
-    let mark = creator_icons::texture(ui.ctx(), "artcraft");
+    let mark = creator_icons::texture(ui.ctx(), "fogbreak");
     let mut actions = Vec::new();
-    let chrome = egui::Frame::NONE.fill(theme::CHROME);
+    let chrome = egui::Frame::NONE.fill(theme::chrome());
     egui::Panel::top("titlebar").exact_size(shell::TITLEBAR_HEIGHT).resizable(false).frame(chrome).show(ui, |ui| {
       actions.extend(shell::titlebar(ui, &account, &mark));
     });
@@ -620,8 +753,8 @@ impl ArtcraftApp {
     let toggles = self.page_feed().map(|key| FeedToggles { mode: self.view_mode, selecting: self.feed(key).selecting, autoplay: matches!(key, FeedKey::Video | FeedKey::Library).then_some(self.autoplay) });
     let mut header_action = None;
     let mut open_page = None;
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(theme::CHROME).inner_margin(margin)).show(ui, |ui| {
-      let panel = egui::Frame::new().fill(theme::BG).stroke(theme::hairline()).corner_radius(shell::PANEL_RADIUS);
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(theme::chrome()).inner_margin(margin)).show(ui, |ui| {
+      let panel = egui::Frame::new().fill(theme::bg()).stroke(theme::hairline()).corner_radius(shell::PANEL_RADIUS);
       panel.show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         egui::Panel::top("page-header").exact_size(shell::HEADER_HEIGHT).resizable(false).frame(egui::Frame::NONE).show(ui, |ui| {
@@ -732,7 +865,13 @@ impl ArtcraftApp {
             self.video.mention_character(&name, &token);
             self.characters_modal = None;
           },
-          CharactersAction::Upload { ref_id, path } => self.backend.upload_file(ref_id, RefKind::Image, path),
+          CharactersAction::Upload { ref_id, path } => {
+            #[cfg(not(target_arch = "wasm32"))]
+            self.backend.upload_file(ref_id, RefKind::Image, path);
+            #[cfg(target_arch = "wasm32")]
+            let _ = (ref_id, path);
+          },
+          CharactersAction::UploadBytes { ref_id, name, bytes } => self.backend.upload_bytes(ref_id, RefKind::Image, name, bytes),
           CharactersAction::Create { image_token, name, description } => self.backend.create_character(image_token, name, description),
           CharactersAction::Edit { token, name, description } => self.backend.edit_character(token, name, description),
           CharactersAction::Delete { token, name } => self.backend.delete_character(token, name),
@@ -777,6 +916,7 @@ impl ArtcraftApp {
       }
     }
     if let Some(login) = &mut self.midjourney_login {
+      #[cfg(not(target_arch = "wasm32"))]
       match login.show(ctx, frame) {
         Some(LoginEvent::Captured(cookies)) => {
           self.midjourney_login = None;
@@ -785,6 +925,13 @@ impl ArtcraftApp {
         },
         Some(LoginEvent::Closed) => self.midjourney_login = None,
         None => {},
+      }
+      #[cfg(target_arch = "wasm32")]
+      {
+        let _ = frame;
+        if let Some(LoginEvent::Closed) = login.show(ctx) {
+          self.midjourney_login = None;
+        }
       }
     }
     if let Some(url) = self.preview.clone() {
@@ -810,7 +957,10 @@ impl ArtcraftApp {
   fn account_action(&mut self, action: AccountAction) {
     match action {
       AccountAction::ConnectMidjourney => self.midjourney_login = Some(MidjourneyLogin::new(self.backend.data_root())),
-      AccountAction::DisconnectMidjourney => self.backend.disconnect_midjourney(),
+      AccountAction::DisconnectMidjourney => {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.backend.disconnect_midjourney();
+      },
       AccountAction::SaveFalKey => match self.backend.accounts().set_fal_key(&self.fal_key_input) {
         Ok(()) => {
           self.fal_key_input.clear();
@@ -844,7 +994,7 @@ impl ArtcraftApp {
       },
       LightboxAction::Recreate => self.handle_request(ctx, AppRequest::Recreate { kind: item.kind, token: item.token.clone() }),
       LightboxAction::MakeVideo => self.handle_request(ctx, AppRequest::MakeVideo { token: item.token.clone() }),
-      LightboxAction::Download => self.download(std::slice::from_ref(&item.token)),
+      LightboxAction::Download => self.download(ctx, std::slice::from_ref(&item.token)),
       LightboxAction::Share => self.handle_request(ctx, AppRequest::Share(item.token.clone())),
       LightboxAction::Delete => {
         self.backend.delete_media(item.token.clone());
@@ -852,23 +1002,28 @@ impl ArtcraftApp {
       },
       LightboxAction::CopyPrompt(text) => self.handle_request(ctx, AppRequest::CopyText(text)),
       LightboxAction::Play(url) => {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Err(err) = open::that(&url) {
           self.toasts.error(format!("Couldn't open the video: {err}"));
         }
+        #[cfg(target_arch = "wasm32")]
+        ctx.open_url(egui::OpenUrl::new_tab(&url));
       },
     }
   }
-}
 
-impl eframe::App for ArtcraftApp {
-  fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+  /// Drains pending backend events and runs frame timers (called by `eframe::App::logic` and
+  /// browser shells).
+  pub fn step_logic(&mut self, ctx: &egui::Context) {
     for event in self.backend.drain() {
       self.handle_event(ctx, event);
     }
+    self.poll_pending_screenshots(ctx);
     self.timers(ctx);
   }
 
-  fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+  /// Draws the full UI for one frame (called by `eframe::App::ui` and browser shells).
+  pub fn step_ui(&mut self, ui: &mut Ui, frame: &eframe::Frame) {
     let ctx = ui.ctx().clone();
     self.cache.poll(&ctx);
     if let Some(err) = self.player.poll() {
@@ -884,23 +1039,520 @@ impl eframe::App for ArtcraftApp {
     self.overlays(&ctx, frame);
     self.toasts.show(&ctx);
     window::window_edges(&ctx);
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(shot) = &mut self.screenshot {
       shot.tick(&ctx);
     }
   }
 
-  fn save(&mut self, storage: &mut dyn eframe::Storage) {
+  pub fn save_state(&self, storage: &mut dyn eframe::Storage) {
     let saved = Saved { page: self.page, enter_to_generate: self.enter_to_generate, view_mode: self.view_mode, autoplay: self.autoplay, sidebar_open: self.sidebar_open, image: self.image.settings.clone(), video: self.video.settings.clone(), audio: self.audio.settings.clone() };
     eframe::set_value(storage, STORAGE_KEY, &saved);
   }
 
-  fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-    theme::CHROME.to_normalized_gamma_f32()
+  pub fn is_dirty(&self) -> bool {
+    !self.image.settings.prompt.trim().is_empty()
+      || !self.video.settings.prompt.trim().is_empty()
+      || !self.audio.settings.prompt.trim().is_empty()
+      || self.image.generating
+      || self.video.generating
+      || self.audio.generating
+      || self.image.refs.any_uploading()
+      || self.video.refs.any_uploading()
+      || self.audio.refs.any_uploading()
+  }
+
+  pub fn state_revision(&self) -> u64 {
+    self.revision
+  }
+
+  pub fn set_host_theme(&mut self, ctx: &egui::Context, dark: bool) {
+    theme::apply_theme(ctx, dark);
+    self.revision = self.revision.saturating_add(1);
+    ctx.request_repaint();
+  }
+
+  pub fn request_screenshot(&mut self, ctx: &egui::Context) -> Receiver<Result<Value, String>> {
+    let (tx, rx) = channel();
+    self.pending_screenshots.push(tx);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+    ctx.request_repaint();
+    rx
+  }
+
+  fn poll_pending_screenshots(&mut self, ctx: &egui::Context) {
+    if self.pending_screenshots.is_empty() {
+      return;
+    }
+    let image = ctx.input(|i| {
+      i.raw.events.iter().find_map(|e| match e {
+        egui::Event::Screenshot { image, .. } => Some(image.clone()),
+        _ => None,
+      })
+    });
+    let Some(image) = image else {
+      return;
+    };
+    let [w, h] = image.size;
+    let pixels: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let payload = match image::RgbaImage::from_raw(w as u32, h as u32, pixels) {
+      Some(rgba) => {
+        let mut png = Vec::new();
+        match image::DynamicImage::ImageRgba8(rgba).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png) {
+          Ok(()) => Ok(json!({
+            "ok": true,
+            "mime": "image/png",
+            "width": w,
+            "height": h,
+            "base64": STANDARD.encode(&png),
+          })),
+          Err(err) => Err(format!("PNG encode failed: {err}")),
+        }
+      },
+      None => Err("Screenshot image buffer malformed".to_owned()),
+    };
+    for waiter in self.pending_screenshots.drain(..) {
+      let _ = waiter.send(payload.clone());
+    }
+  }
+
+  pub fn commands_list() -> &'static [CommandSpec] {
+    COMMANDS
+  }
+
+  pub fn describe_command(id: &str) -> Option<&'static CommandSpec> {
+    COMMANDS.iter().find(|c| c.id == id)
+  }
+
+  pub fn inspect_document(&self, detail: Option<&str>) -> Value {
+    let full = matches!(detail, Some("full" | "verbose" | "all"));
+    let mut doc = json!({
+      "engine": "fogbreak-hub",
+      "page": self.page.label(),
+      "pageSlug": self.page.web_path().trim_start_matches('/'),
+      "dirty": self.is_dirty(),
+      "revision": self.revision,
+      "signedIn": self.user.is_some(),
+      "username": self.user.as_ref().map(|u| u.username.as_str()),
+      "credits": self.credits,
+      "theme": if theme::is_dark() { "dark" } else { "light" },
+      "viewMode": match self.view_mode { ViewMode::Grid => "grid", ViewMode::List => "list" },
+      "autoplay": self.autoplay,
+      "sidebarOpen": self.sidebar_open,
+      "models": {
+        "image": self.catalog.image_page.len(),
+        "video": self.catalog.video_page.len(),
+        "audio": self.catalog.audio_page.len(),
+      },
+      "feeds": {
+        "image": self.image.feed.items.len(),
+        "video": self.video.feed.items.len(),
+        "audio": self.audio.feed.items.len(),
+        "library": self.library.items.len(),
+      },
+      "generating": {
+        "image": self.image.generating,
+        "video": self.video.generating,
+        "audio": self.audio.generating,
+      },
+    });
+    if full {
+      doc["settings"] = json!({
+        "image": &self.image.settings,
+        "video": &self.video.settings,
+        "audio": &self.audio.settings,
+      });
+      doc["selection"] = json!(self.page_feed().map(|k| self.feed(k).selected.iter().collect::<Vec<_>>()).unwrap_or_default());
+    }
+    doc
+  }
+
+  pub fn inspect_ui(&self, ctx: &egui::Context) -> Value {
+    let rect = ctx.content_rect();
+    json!({
+      "width": rect.width(),
+      "height": rect.height(),
+      "pixelsPerPoint": ctx.pixels_per_point(),
+      "theme": if theme::is_dark() { "dark" } else { "light" },
+      "page": self.page.label(),
+      "pageSlug": self.page.web_path().trim_start_matches('/'),
+      "sidebarOpen": self.sidebar_open,
+      "overlays": {
+        "lightbox": self.lightbox.as_ref().map(|l| json!({ "kind": l.kind.label(), "token": l.token })),
+        "login": self.login.is_some(),
+        "settings": self.settings_open,
+        "characters": self.characters_modal.is_some(),
+        "libraryPicker": self.picker.is_some(),
+        "preview": self.preview.is_some(),
+      },
+      "dirty": self.is_dirty(),
+      "revision": self.revision,
+    })
+  }
+
+  pub fn export_workspace(&self, format: &str) -> Result<(String, &'static str, Vec<u8>), String> {
+    let fmt = format.trim().trim_start_matches('.').to_ascii_lowercase();
+    match fmt.as_str() {
+      "txt" | "prompt" => {
+        let text = match self.page {
+          Page::CreateVideo => &self.video.settings.prompt,
+          Page::CreateAudio => &self.audio.settings.prompt,
+          _ => &self.image.settings.prompt,
+        };
+        Ok(("fogbreak_prompt.txt".to_owned(), "text/plain", text.as_bytes().to_vec()))
+      },
+      "json" | "" => {
+        let payload = self.inspect_document(Some("full"));
+        let bytes = serde_json::to_vec_pretty(&payload).map_err(|e| e.to_string())?;
+        Ok(("fogbreak_workspace.json".to_owned(), "application/json", bytes))
+      },
+      other => Err(format!("unsupported export format `{other}`")),
+    }
+  }
+
+  pub fn import_bytes(&mut self, ctx: &egui::Context, name: String, bytes: Vec<u8>) -> Result<Value, String> {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    if ext == "json" {
+      let val: Value = serde_json::from_slice(&bytes).map_err(|e| format!("invalid workspace JSON: {e}"))?;
+      if let Some(settings) = val.get("settings") {
+        if let Some(img) = settings.get("image").and_then(|v| serde_json::from_value::<ImageSettings>(v.clone()).ok()) {
+          self.image.settings = img;
+        }
+        if let Some(vid) = settings.get("video").and_then(|v| serde_json::from_value::<VideoSettings>(v.clone()).ok()) {
+          self.video.settings = vid;
+        }
+        if let Some(aud) = settings.get("audio").and_then(|v| serde_json::from_value::<AudioSettings>(v.clone()).ok()) {
+          self.audio.settings = aud;
+        }
+      } else if let Some(prompt) = val.get("prompt").and_then(Value::as_str) {
+        self.apply_prompt_text(prompt.to_owned(), val.get("page").and_then(Value::as_str));
+      }
+      self.revision = self.revision.saturating_add(1);
+      ctx.request_repaint();
+      return Ok(json!({ "ok": true, "kind": "workspace", "name": name }));
+    }
+    let Some(kind) = RefKind::from_name(&name) else {
+      return Err(format!("unsupported file type `{name}`"));
+    };
+    let target = match kind {
+      RefKind::Audio => Page::CreateAudio,
+      RefKind::Video => Page::CreateVideo,
+      RefKind::Image => {
+        if matches!(self.page, Page::CreateVideo | Page::CreateAudio) {
+          self.page
+        } else {
+          Page::CreateImage
+        }
+      },
+    };
+    self.navigate(target);
+    let mut env = env!(self, ctx);
+    match target {
+      Page::CreateImage => self.image.attach_bytes(&mut env, name.clone(), bytes),
+      Page::CreateVideo => self.video.attach_bytes(&mut env, name.clone(), bytes),
+      Page::CreateAudio => self.audio.attach_bytes(&mut env, name.clone(), bytes),
+      _ => {},
+    }
+    self.revision = self.revision.saturating_add(1);
+    ctx.request_repaint();
+    Ok(json!({ "ok": true, "kind": kind.noun(), "name": name, "page": target.label() }))
+  }
+
+  fn apply_prompt_text(&mut self, text: String, target_page: Option<&str>) {
+    if let Some(p) = target_page.and_then(Page::from_slug) {
+      self.navigate(p);
+    }
+    match self.page {
+      Page::CreateVideo => self.video.settings.prompt = text,
+      Page::CreateAudio => self.audio.settings.prompt = text,
+      _ => {
+        if !matches!(self.page, Page::CreateImage) {
+          self.navigate(Page::CreateImage);
+        }
+        self.image.settings.prompt = text;
+      },
+    }
+  }
+
+  pub fn execute_command(&mut self, ctx: &egui::Context, cmd: &str, params: &Value) -> Result<Value, String> {
+    let mut bump = true;
+    let res = match cmd {
+      "nav.home" => {
+        self.navigate(Page::Home);
+        json!({ "page": self.page.label() })
+      },
+      "nav.image" => {
+        self.navigate(Page::CreateImage);
+        json!({ "page": self.page.label() })
+      },
+      "nav.video" => {
+        self.navigate(Page::CreateVideo);
+        json!({ "page": self.page.label() })
+      },
+      "nav.audio" => {
+        self.navigate(Page::CreateAudio);
+        json!({ "page": self.page.label() })
+      },
+      "nav.library" => {
+        self.navigate(Page::Library);
+        json!({ "page": self.page.label() })
+      },
+      "nav.toggle_sidebar" => {
+        self.sidebar_open = !self.sidebar_open;
+        json!({ "sidebarOpen": self.sidebar_open })
+      },
+      "nav.page" => {
+        let slug = params.get("slug").or_else(|| params.get("page")).and_then(Value::as_str).ok_or("missing `slug`")?;
+        let page = Page::from_slug(slug).ok_or_else(|| format!("unknown page `{slug}`"))?;
+        self.navigate(page);
+        json!({ "page": self.page.label() })
+      },
+      "prompt.set" => {
+        let text = params.get("prompt").and_then(Value::as_str).ok_or("missing `prompt`")?.to_owned();
+        self.apply_prompt_text(text, params.get("page").and_then(Value::as_str));
+        json!({ "ok": true, "page": self.page.label() })
+      },
+      "prompt.clear" => {
+        match self.page {
+          Page::CreateVideo => {
+            self.video.settings.prompt.clear();
+            self.video.refs.clear();
+          },
+          Page::CreateAudio => {
+            self.audio.settings.prompt.clear();
+            self.audio.settings.style_prompt.clear();
+            self.audio.refs.clear();
+          },
+          _ => {
+            self.image.settings.prompt.clear();
+            self.image.refs.clear();
+          },
+        }
+        json!({ "ok": true })
+      },
+      "prompt.generate" => {
+        let mut env = env!(self, ctx);
+        match self.page {
+          Page::CreateVideo => self.video.trigger_generate(&mut env),
+          Page::CreateAudio => self.audio.trigger_generate(&mut env),
+          _ => self.image.trigger_generate(&mut env),
+        }
+        for req in std::mem::take(&mut self.requests) {
+          self.handle_request(ctx, req);
+        }
+        json!({ "ok": true, "page": self.page.label() })
+      },
+      "model.select" => {
+        let model = params.get("model").and_then(Value::as_str).ok_or("missing `model`")?.to_owned();
+        let modality = params.get("modality").and_then(Value::as_str).unwrap_or(match self.page {
+          Page::CreateVideo => "video",
+          Page::CreateAudio => "audio",
+          _ => "image",
+        });
+        match modality {
+          "video" => self.video.settings.model = Some(model.clone()),
+          "audio" => self.audio.settings.model = Some(model.clone()),
+          _ => {
+            if let Some(prov) = params.get("provider").and_then(Value::as_str) {
+              if let Ok(parsed) = serde_json::from_value::<Provider>(Value::String(prov.to_owned())) {
+                self.image.settings.providers.insert(model.clone(), parsed);
+              }
+            }
+            self.image.settings.model = Some(model.clone());
+          },
+        }
+        json!({ "ok": true, "modality": modality, "model": model })
+      },
+      "image.set" => {
+        if let Some(ar) = params.get("aspect_ratio").and_then(Value::as_str) {
+          self.image.settings.aspect_ratio = Some(ar.to_owned());
+        }
+        if let Some(res) = params.get("resolution").and_then(Value::as_str) {
+          self.image.settings.resolution = Some(res.to_owned());
+        }
+        if let Some(q) = params.get("quality").and_then(Value::as_str) {
+          self.image.settings.quality = Some(q.to_owned());
+        }
+        if let Some(c) = params.get("count").and_then(Value::as_u64) {
+          self.image.settings.count = u16::try_from(c.clamp(1, 16)).unwrap_or(1);
+        }
+        json!({ "ok": true, "settings": &self.image.settings })
+      },
+      "video.set" => {
+        if let Some(mode) = params.get("input_mode").and_then(Value::as_str) {
+          self.video.settings.input_mode = if mode == "keyframe" { crate::pages::create_video::InputMode::Keyframe } else { crate::pages::create_video::InputMode::Reference };
+        }
+        if let Some(ar) = params.get("aspect_ratio").and_then(Value::as_str) {
+          self.video.settings.aspect_ratio = Some(ar.to_owned());
+        }
+        if let Some(res) = params.get("resolution").and_then(Value::as_str) {
+          self.video.settings.resolution = Some(res.to_owned());
+        }
+        if let Some(dur) = params.get("duration").and_then(Value::as_u64) {
+          self.video.settings.duration = u16::try_from(dur).ok();
+        }
+        if let Some(ga) = params.get("generate_audio").and_then(Value::as_bool) {
+          self.video.settings.generate_audio = ga;
+        }
+        if let Some(c) = params.get("count").and_then(Value::as_u64) {
+          self.video.settings.count = u16::try_from(c.clamp(1, 8)).unwrap_or(1);
+        }
+        json!({ "ok": true, "settings": &self.video.settings })
+      },
+      "audio.set" => {
+        if let Some(style) = params.get("style_prompt").and_then(Value::as_str) {
+          self.audio.settings.style_prompt = style.to_owned();
+        }
+        if let Some(inst) = params.get("instrumental").and_then(Value::as_bool) {
+          self.audio.settings.instrumental = inst;
+        }
+        if let Some(bpm) = params.get("bpm").and_then(Value::as_u64) {
+          self.audio.settings.bpm = u16::try_from(bpm.clamp(40, 240)).ok();
+        }
+        if let Some(key) = params.get("musical_key").and_then(Value::as_str) {
+          self.audio.settings.musical_key = key.to_owned();
+        }
+        json!({ "ok": true, "settings": &self.audio.settings })
+      },
+      "view.grid" => {
+        self.view_mode = ViewMode::Grid;
+        json!({ "viewMode": "grid" })
+      },
+      "view.list" => {
+        self.view_mode = ViewMode::List;
+        json!({ "viewMode": "list" })
+      },
+      "view.autoplay" => {
+        self.autoplay = params.get("enabled").and_then(Value::as_bool).unwrap_or(!self.autoplay);
+        json!({ "autoplay": self.autoplay })
+      },
+      "view.select_mode" => {
+        self.apply_shell_action(ShellAction::ToggleSelect);
+        json!({ "selecting": self.page_feed().is_some_and(|k| self.feed(k).selecting) })
+      },
+      "ui.sign_in" => {
+        self.open_login();
+        json!({ "ok": true })
+      },
+      "ui.sign_out" => {
+        self.backend.logout();
+        self.settings_open = false;
+        json!({ "ok": true })
+      },
+      "ui.settings" => {
+        self.settings_open = true;
+        json!({ "ok": true })
+      },
+      "ui.characters" => {
+        self.handle_request(ctx, AppRequest::OpenCharacters);
+        json!({ "ok": true })
+      },
+      "ui.close_overlays" => {
+        self.lightbox = None;
+        self.picker = None;
+        self.login = None;
+        self.characters_modal = None;
+        self.settings_open = false;
+        self.provider_setup = None;
+        self.midjourney_login = None;
+        self.preview = None;
+        json!({ "ok": true })
+      },
+      "ui.lightbox.open" => {
+        let token = params.get("token").and_then(Value::as_str).ok_or("missing `token`")?.to_owned();
+        let kind = match params.get("kind").and_then(Value::as_str) {
+          Some("video") => MediaKind::Video,
+          Some("audio") => MediaKind::Audio,
+          _ => self.find_item(&token).map_or(MediaKind::Image, |i| i.kind),
+        };
+        self.handle_request(ctx, AppRequest::Open { kind, token });
+        json!({ "ok": true })
+      },
+      "ui.lightbox.close" => {
+        self.lightbox = None;
+        json!({ "ok": true })
+      },
+      "ui.theme" | "theme.get" | "theme.set" => {
+        if cmd == "theme.get" || (params.get("mode").is_none() && params.get("dark").is_none()) {
+          bump = false;
+        } else {
+          let dark = params.get("dark").and_then(Value::as_bool).or_else(|| params.get("mode").and_then(Value::as_str).map(|s| !s.eq_ignore_ascii_case("light"))).unwrap_or(true);
+          self.set_host_theme(ctx, dark);
+        }
+        let dark = theme::is_dark();
+        json!({ "mode": if dark { "dark" } else { "light" }, "theme": if dark { "dark" } else { "light" }, "dark": dark })
+      },
+      "media.recreate" => {
+        let token = params.get("token").and_then(Value::as_str).ok_or("missing `token`")?.to_owned();
+        let kind = match params.get("kind").and_then(Value::as_str) {
+          Some("video") => MediaKind::Video,
+          Some("audio") => MediaKind::Audio,
+          _ => self.find_item(&token).map_or(MediaKind::Image, |i| i.kind),
+        };
+        self.handle_request(ctx, AppRequest::Recreate { kind, token });
+        json!({ "ok": true })
+      },
+      "media.make_video" => {
+        let token = params.get("token").and_then(Value::as_str).ok_or("missing `token`")?.to_owned();
+        self.handle_request(ctx, AppRequest::MakeVideo { token });
+        json!({ "ok": true })
+      },
+      "media.download" => {
+        let tokens: Vec<String> = params.get("tokens").and_then(Value::as_array).map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+        self.download(ctx, &tokens);
+        json!({ "ok": true, "count": tokens.len() })
+      },
+      "media.refresh_library" => {
+        for modality in MODALITIES {
+          self.backend.load_models(modality);
+        }
+        self.backend.refresh_session();
+        json!({ "ok": true })
+      },
+      "doc.inspect" | "inspect" => {
+        bump = false;
+        self.inspect_document(params.get("detail").and_then(Value::as_str))
+      },
+      "ui.inspect" => {
+        bump = false;
+        self.inspect_ui(ctx)
+      },
+      "io.formats" => {
+        bump = false;
+        json!({
+          "open": ["json", "png", "jpg", "jpeg", "webp", "gif", "mp4", "mp3", "wav", "ogg", "flac"],
+          "export": ["json", "txt"],
+        })
+      },
+      other => return Err(format!("unknown command `{other}`")),
+    };
+    if bump {
+      self.revision = self.revision.saturating_add(1);
+    }
+    ctx.request_repaint();
+    Ok(res)
   }
 }
 
-/// Diagnostics: `ARTCRAFT_SCREENSHOT=<file.png>` saves a screenshot once the window has settled
-/// (and `ARTCRAFT_SCREENSHOT_EXIT=1` then closes the app), for checking the UI headlessly.
+impl eframe::App for ArtcraftApp {
+  fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    self.step_logic(ctx);
+  }
+
+  fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+    self.step_ui(ui, frame);
+  }
+
+  fn save(&mut self, storage: &mut dyn eframe::Storage) {
+    self.save_state(storage);
+  }
+
+  fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+    theme::chrome().to_normalized_gamma_f32()
+  }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 struct ScreenshotRequest {
   path: std::path::PathBuf,
   exit: bool,
@@ -908,8 +1560,8 @@ struct ScreenshotRequest {
   requested: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ScreenshotRequest {
-  /// Frames to wait before capturing (models, session and thumbnails get a moment to load).
   const SETTLE_SECS: f64 = 8.0;
 
   fn from_env() -> Option<Self> {
@@ -944,7 +1596,7 @@ impl ScreenshotRequest {
   }
 }
 
-/// `artcraft_<token>.<ext>`, the extension taken from the URL.
+/// `fogbreak_<token>.<ext>`, the extension taken from the URL.
 fn file_name_for(item: &FeedItem) -> String {
   let fallback = match item.kind {
     MediaKind::Image => "png",
@@ -952,5 +1604,5 @@ fn file_name_for(item: &FeedItem) -> String {
     MediaKind::Audio => "mp3",
   };
   let ext = item.full_url.rsplit('.').next().filter(|e| e.len() <= 4 && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or(fallback);
-  format!("artcraft_{}.{ext}", item.token)
+  format!("fogbreak_{}.{ext}", item.token)
 }

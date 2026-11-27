@@ -59,7 +59,6 @@ impl CreateImagePage {
     let models = &env.catalog.image_page;
     let base = common::selected_model(models, self.settings.model.as_deref(), DEFAULT_IMAGE_MODEL).cloned();
     let provider = base.as_ref().map_or(Provider::Artcraft, |m| self.provider(m));
-    // What the model can do on its provider (direct Midjourney: four images, no references).
     let model = base.as_ref().map(|m| provider.adapt(m));
     if let (Some(base), Some(m)) = (&base, &model) {
       self.reconcile(base);
@@ -75,6 +74,20 @@ impl CreateImagePage {
     common::create_shell(ui, env, MediaKind::Image, "Create Image", "Add a prompt, then generate", &mut feed, &mut box_height, |ui, env| self.prompt_box(ui, env, model.as_ref(), provider));
     self.feed = feed;
     self.box_height = box_height;
+  }
+
+  pub fn trigger_generate(&mut self, env: &mut Env<'_>) {
+    let base = common::selected_model(&env.catalog.image_page, self.settings.model.as_deref(), DEFAULT_IMAGE_MODEL).cloned();
+    let provider = base.as_ref().map_or(Provider::Artcraft, |m| self.provider(m));
+    let model = base.as_ref().map(|m| provider.adapt(m));
+    self.generate(env, model.as_ref(), provider);
+  }
+
+  pub fn attach_bytes(&mut self, env: &mut Env<'_>, name: String, bytes: Vec<u8>) {
+    let base = common::selected_model(&env.catalog.image_page, self.settings.model.as_deref(), DEFAULT_IMAGE_MODEL).cloned();
+    let provider = base.as_ref().map_or(Provider::Artcraft, |m| self.provider(m));
+    let max_images = base.as_ref().map(|m| provider.adapt(m)).map_or(0, |m| m.image_refs_max);
+    self.add_inputs(env, vec![common::PickedInput::Bytes(name, bytes)], max_images);
   }
 
   /// The provider `model` runs on: the user's pick, else its default.
@@ -131,6 +144,10 @@ impl CreateImagePage {
     if let Some(n) = picked_count {
       self.settings.count = n;
     }
+    let picked = common::take_picked(&env.ctx, Id::new("image-pick"));
+    if !picked.is_empty() {
+      self.add_inputs(env, picked, max_images);
+    }
     for action in actions {
       self.handle(action, env, model, max_images, provider);
     }
@@ -146,8 +163,11 @@ impl CreateImagePage {
       PromptBoxAction::Deck(deck) => match deck {
         DeckAction::Upload { .. } => {
           let free = max_images.saturating_sub(self.refs.images.len());
-          for path in common::pick_files(&[RefKind::Image], free > 1).into_iter().take(free) {
-            common::upload_path(env, &mut self.refs, &path, RefKind::Image, ImageSlot::Reference);
+          let target = Id::new("image-pick");
+          common::request_files(&env.ctx, target, &[RefKind::Image], free > 1);
+          let picked = common::take_picked(&env.ctx, target);
+          if !picked.is_empty() {
+            self.add_inputs(env, picked, max_images);
           }
         },
         DeckAction::Library { kind, slot } => {
@@ -166,7 +186,14 @@ impl CreateImagePage {
         },
         DeckAction::SwapFrames => {},
       },
-      PromptBoxAction::DroppedFiles(paths) => self.add_dropped(env, &paths, max_images),
+      PromptBoxAction::DroppedFiles(paths) => {
+        let inputs: Vec<common::PickedInput> = paths.into_iter().map(common::PickedInput::Path).collect();
+        self.add_inputs(env, inputs, max_images);
+      },
+      PromptBoxAction::DroppedBytes(files) => {
+        let inputs: Vec<common::PickedInput> = files.into_iter().map(|(n, b)| common::PickedInput::Bytes(n, b)).collect();
+        self.add_inputs(env, inputs, max_images);
+      },
       PromptBoxAction::MentionPicked(..) => {},
       PromptBoxAction::PastedImage(png) => {
         if self.refs.images.len() >= max_images {
@@ -178,12 +205,12 @@ impl CreateImagePage {
     }
   }
 
-  /// Routes dropped files: images into the deck (up to the model's limit); others get a note.
-  fn add_dropped(&mut self, env: &mut Env<'_>, paths: &[std::path::PathBuf], max_images: usize) {
-    let kinds: Vec<Option<RefKind>> = paths.iter().map(|p| RefKind::from_path(p)).collect();
-    let images: Vec<&std::path::PathBuf> = paths.iter().zip(&kinds).filter(|(_, k)| **k == Some(RefKind::Image)).map(|(p, _)| p).collect();
+  /// Routes dropped or picked files: images into the deck (up to the model's limit); others get a note.
+  fn add_inputs(&mut self, env: &mut Env<'_>, inputs: Vec<common::PickedInput>, max_images: usize) {
+    let kinds: Vec<Option<RefKind>> = inputs.iter().map(common::PickedInput::ref_kind).collect();
     let has_video = kinds.contains(&Some(RefKind::Video));
     let has_audio = kinds.contains(&Some(RefKind::Audio));
+    let images: Vec<common::PickedInput> = inputs.into_iter().zip(kinds).filter(|(_, k)| *k == Some(RefKind::Image)).map(|(i, _)| i).collect();
     if has_video || has_audio {
       let what = match (has_video, has_audio) {
         (true, true) => "Video or audio",
@@ -202,8 +229,8 @@ impl CreateImagePage {
       env.toasts.error(max_images_message(max_images));
       return;
     }
-    for path in images.into_iter().take(free) {
-      common::upload_path(env, &mut self.refs, path, RefKind::Image, ImageSlot::Reference);
+    for input in images.into_iter().take(free) {
+      common::upload_input(env, &mut self.refs, input, RefKind::Image, ImageSlot::Reference);
     }
   }
 

@@ -139,7 +139,7 @@ pub fn show(ui: &mut Ui, prompt: &mut String, state: &mut EditorState, opts: &Ed
   let output = scroll
     .show(&mut child, |ui| {
       let min_h = height.unwrap_or(MIN_HEIGHT);
-      egui::TextEdit::multiline(prompt).id(id).frame(egui::Frame::NONE).font(FontId::new(FONT_SIZE, FontFamily::Proportional)).hint_text(egui::RichText::new(opts.placeholder).color(theme::MUTED).size(FONT_SIZE)).desired_width(text_width).desired_rows(1).min_size(vec2(text_width, min_h)).return_key(return_key).layouter(&mut layouter).show(ui)
+      egui::TextEdit::multiline(prompt).id(id).frame(egui::Frame::NONE).font(FontId::new(FONT_SIZE, FontFamily::Proportional)).hint_text(egui::RichText::new(opts.placeholder).color(theme::muted()).size(FONT_SIZE)).desired_width(text_width).desired_rows(1).min_size(vec2(text_width, min_h)).return_key(return_key).layouter(&mut layouter).show(ui)
     })
     .inner;
   let used_h = child.min_rect().height().clamp(MIN_HEIGHT, max_h);
@@ -170,8 +170,8 @@ pub fn show(ui: &mut Ui, prompt: &mut String, state: &mut EditorState, opts: &Ed
     let button = Rect::from_min_size(pos2(field_rect.right() - 24.0, field_rect.top()), vec2(24.0, 24.0));
     let resp = ui.interact(button, id.with("fullscreen"), Sense::click()).on_hover_text("Focus mode").on_hover_cursor(egui::CursorIcon::PointingHand);
     let p = ui.painter();
-    p.rect_filled(button, theme::RADIUS, if resp.hovered() { theme::WASH_HOVER } else { theme::WASH });
-    icons::paint(p, button.shrink(6.0), Icon::Maximize, if resp.hovered() { theme::INK } else { theme::DIM });
+    p.rect_filled(button, theme::RADIUS, if resp.hovered() { theme::wash_hover() } else { theme::wash() });
+    icons::paint(p, button.shrink(6.0), Icon::Maximize, if resp.hovered() { theme::ink() } else { theme::dim() });
     out.open_fullscreen = resp.clicked();
   }
 
@@ -186,7 +186,7 @@ pub fn show(ui: &mut Ui, prompt: &mut String, state: &mut EditorState, opts: &Ed
       Some(max) => format!("{count} / {max}"),
       None => format!("{count} / \u{221e}"),
     };
-    let color = if over { Color32::from_rgb(0xef, 0x44, 0x44) } else { theme::FAINT };
+    let color = if over { Color32::from_rgb(0xef, 0x44, 0x44) } else { theme::faint() };
     ui.painter().text(pos2(field_rect.right() - 16.0, field_rect.bottom() + 4.0), Align2::RIGHT_BOTTOM, text, FontId::new(10.0, FontFamily::Monospace), color);
   }
 
@@ -303,8 +303,8 @@ fn mention_dropdown(ui: &Ui, id: Id, field: Rect, prompt: &mut String, state: &m
   let mut hovered = None;
   egui::Area::new(id.with("mentions")).order(Order::Foreground).fixed_pos(rect.min).show(ui.ctx(), |ui| {
     let p = ui.painter();
-    p.rect(rect, theme::RADIUS, theme::CONTROLS, theme::hairline(), egui::StrokeKind::Inside);
-    p.text(pos2(rect.left() + 12.0, rect.top() + 14.0), Align2::LEFT_CENTER, "MENTIONS", FontId::new(11.0, theme::mono_bold()), theme::fade(theme::INK, 0.5));
+    p.rect(rect, theme::RADIUS, theme::controls(), theme::hairline(), egui::StrokeKind::Inside);
+    p.text(pos2(rect.left() + 12.0, rect.top() + 14.0), Align2::LEFT_CENTER, "MENTIONS", FontId::new(11.0, theme::mono_bold()), theme::fade(theme::ink(), 0.5));
     for (i, item) in filtered.iter().enumerate() {
       let row = Rect::from_min_size(pos2(rect.left(), rect.top() + 28.0 + row_h * i as f32), vec2(rect.width(), row_h));
       let resp = ui.interact(row, id.with(("mention", i)), Sense::click());
@@ -314,7 +314,7 @@ fn mention_dropdown(ui: &Ui, id: Id, field: Rect, prompt: &mut String, state: &m
       }
       let p = ui.painter();
       if i == selected {
-        p.rect_filled(row, 0.0, theme::WASH_HOVER);
+        p.rect_filled(row, 0.0, theme::wash_hover());
       }
       let tile = Rect::from_min_size(pos2(row.left() + 12.0, row.center().y - 16.0), vec2(32.0, 32.0));
       p.rect(tile, 0.0, theme::fade(Color32::BLACK, 0.2), theme::hairline(), egui::StrokeKind::Inside);
@@ -367,7 +367,7 @@ fn resize_grip(ui: &mut Ui, id: Id, field: Rect, state: &mut EditorState) {
 
 /// The prompt as a layout job with each known mention coloured and bold.
 fn highlight(text: &str, mentions: &[MentionItem]) -> LayoutJob {
-  let plain = TextFormat { font_id: FontId::new(FONT_SIZE, FontFamily::Proportional), color: theme::INK, ..Default::default() };
+  let plain = TextFormat { font_id: FontId::new(FONT_SIZE, FontFamily::Proportional), color: theme::ink(), ..Default::default() };
   let mut job = LayoutJob::default();
   if mentions.is_empty() || !text.contains('@') {
     job.append(text, 0.0, plain);
@@ -418,7 +418,7 @@ mod tests {
   fn colours_known_mentions_case_insensitively() {
     let mentions = mention_items(MentionKind::Image, [None, None].into_iter());
     let job = highlight("put @image2 next to @Image1, not @Image3", &mentions);
-    let coloured: Vec<&str> = job.sections.iter().filter(|s| s.format.color != theme::INK).map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect();
+    let coloured: Vec<&str> = job.sections.iter().filter(|s| s.format.color != theme::ink()).map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect();
     assert_eq!(coloured, ["@image2", "@Image1"]);
     assert_eq!(mentions[1].color(), IMAGE_COLORS[1]);
   }

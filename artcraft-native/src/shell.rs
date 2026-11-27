@@ -15,10 +15,8 @@ pub const HEADER_HEIGHT: f32 = 48.0;
 pub const PANEL_GAP: i8 = 8;
 pub const PANEL_RADIUS: u8 = 8;
 const ROW_HEIGHT: f32 = 32.0;
-pub const DISCORD_URL: &str = "https://discord.gg/artcraft";
-pub const GITHUB_URL: &str = "https://github.com/storytold/artcraft";
-pub const TUTORIALS_URL: &str = "https://www.youtube.com/@OfficialArtCraftStudios";
-pub const WEB_APP_URL: &str = "https://app.getartcraft.com";
+pub const GITHUB_URL: &str = "https://github.com/fogbreak-platform/artcraft";
+pub const WEB_APP_URL: &str = "https://fogbreak.io";
 
 /// Every page in the navigation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -74,14 +72,14 @@ impl Page {
   /// The breadcrumb trail (`Create › Image`).
   pub fn crumbs(self) -> (&'static str, &'static str) {
     match self {
-      Page::Home => ("ArtCraft", "Home"),
+      Page::Home => ("Fogbreak Hub", "Home"),
       Page::CreateImage | Page::CreateVideo | Page::CreateAudio | Page::Object3d | Page::World3d => ("Create", self.label()),
       Page::Library => ("Assets", "Library"),
       _ => ("Studio", self.label()),
     }
   }
 
-  /// A page by its web-app style slug (`create-image`), for `ARTCRAFT_PAGE`.
+  /// A page by its web-app style slug (`create-image`), for launch config / `ARTCRAFT_PAGE`.
   pub fn from_slug(slug: &str) -> Option<Self> {
     Some(match slug {
       "home" => Page::Home,
@@ -138,8 +136,7 @@ pub enum ShellAction {
   ToggleSelect,
 }
 
-/// The custom title bar: the ArtCraft mark (home) and the sidebar toggle at the left, the
-/// account and (on Windows and Linux) the caption buttons at the right; the rest drags the window.
+/// The custom title bar: workspace mark (home) and sidebar toggle at left; account and caption buttons at right.
 pub fn titlebar(ui: &mut Ui, account: &Account<'_>, mark: &egui::TextureHandle) -> Option<ShellAction> {
   let mut action = None;
   window::title_bar_drag(ui);
@@ -151,9 +148,9 @@ pub fn titlebar(ui: &mut Ui, account: &Account<'_>, mark: &egui::TextureHandle) 
   let (mark_rect, mark_resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
   let hovered = mark_resp.hovered();
   if hovered {
-    ui.painter().rect_filled(mark_rect, theme::RADIUS, theme::WASH);
+    ui.painter().rect_filled(mark_rect, theme::RADIUS, theme::wash());
   }
-  ui.painter().image(mark.id(), Rect::from_center_size(mark_rect.center(), vec2(18.0, 16.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), theme::ACCENT);
+  ui.painter().image(mark.id(), Rect::from_center_size(mark_rect.center(), vec2(18.0, 16.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), theme::accent());
   if mark_resp.on_hover_text("Home").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
     action = Some(ShellAction::Navigate(Page::Home));
   }
@@ -203,7 +200,7 @@ pub fn sidebar(ui: &mut Ui, page: Page, account: &Account<'_>) -> Option<ShellAc
   }
   for (title, pages) in SECTIONS {
     ui.add_space(10.0);
-    widgets::section_label(ui, title, theme::SIDEBAR_INK);
+    widgets::section_label(ui, title, theme::sidebar_ink());
     for &p in pages {
       if nav_row(ui, p, page == p) {
         action = Some(ShellAction::Navigate(p));
@@ -211,8 +208,8 @@ pub fn sidebar(ui: &mut Ui, page: Page, account: &Account<'_>) -> Option<ShellAc
     }
   }
   ui.add_space(10.0);
-  widgets::section_label(ui, "Resources", theme::SIDEBAR_INK);
-  for (label, icon, url) in [("Tutorials", Icon::Play, TUTORIALS_URL), ("Discord", Icon::Globe, DISCORD_URL), ("GitHub", Icon::ExternalLink, GITHUB_URL)] {
+  widgets::section_label(ui, "Resources", theme::sidebar_ink());
+  for (label, icon, url) in [("Workspace", Icon::Globe, WEB_APP_URL), ("GitHub", Icon::ExternalLink, GITHUB_URL)] {
     if link_row(ui, label, icon) {
       ui.ctx().open_url(egui::OpenUrl::new_tab(url));
     }
@@ -241,19 +238,19 @@ fn nav_row(ui: &mut Ui, page: Page, selected: bool) -> bool {
   let hovered = resp.hovered();
   let p = ui.painter();
   if selected {
-    p.rect_filled(rect, theme::RADIUS, theme::WASH_SELECTED);
-    p.rect_filled(Rect::from_min_size(pos2(rect.left() - 8.0, rect.top() + 7.0), vec2(2.0, 18.0)), 0.0, Color32::WHITE);
+    p.rect_filled(rect, theme::RADIUS, theme::wash_selected());
+    p.rect_filled(Rect::from_min_size(pos2(rect.left() - 8.0, rect.top() + 7.0), vec2(2.0, 18.0)), 0.0, theme::accent());
   } else if hovered {
-    p.rect_filled(rect, theme::RADIUS, theme::WASH);
+    p.rect_filled(rect, theme::RADIUS, theme::wash());
   }
-  let ink = if selected || hovered { Color32::WHITE } else { theme::SIDEBAR_INK };
+  let ink = if selected || hovered { theme::ink_strong() } else { theme::sidebar_ink() };
   let ready = page.is_ready();
   let ink = if ready { ink } else { theme::fade(ink, 0.7) };
   icons::paint(p, Rect::from_center_size(pos2(rect.left() + 16.0, rect.center().y), vec2(15.0, 15.0)), page.icon(), ink);
   let font = FontId::new(14.0, if selected { theme::medium() } else { egui::FontFamily::Proportional });
   p.text(pos2(rect.left() + 32.0, rect.center().y), Align2::LEFT_CENTER, page.label(), font, ink);
   if !ready {
-    widgets::badge(p, ui, pos2(rect.right() - 6.0, rect.center().y), "Soon", theme::FAINT);
+    widgets::badge(p, ui, pos2(rect.right() - 6.0, rect.center().y), "Soon", theme::faint());
   }
   resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
@@ -263,12 +260,12 @@ fn link_row(ui: &mut Ui, label: &str, icon: Icon) -> bool {
   let hovered = resp.hovered();
   let p = ui.painter();
   if hovered {
-    p.rect_filled(rect, theme::RADIUS, theme::WASH);
+    p.rect_filled(rect, theme::RADIUS, theme::wash());
   }
-  let ink = if hovered { Color32::WHITE } else { theme::SIDEBAR_INK };
+  let ink = if hovered { theme::ink_strong() } else { theme::sidebar_ink() };
   icons::paint(p, Rect::from_center_size(pos2(rect.left() + 16.0, rect.center().y), vec2(15.0, 15.0)), icon, ink);
   p.text(pos2(rect.left() + 32.0, rect.center().y), Align2::LEFT_CENTER, label, FontId::new(14.0, egui::FontFamily::Proportional), ink);
-  icons::paint(p, Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(11.0, 11.0)), Icon::ExternalLink, theme::FAINT);
+  icons::paint(p, Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(11.0, 11.0)), Icon::ExternalLink, theme::faint());
   resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
@@ -276,15 +273,15 @@ fn account_row(ui: &mut Ui, name: &str, credits: Option<u64>) -> egui::Response 
   let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
   let hovered = resp.hovered();
   let p = ui.painter();
-  p.rect(rect, theme::RADIUS, if hovered { theme::WASH_HOVER } else { theme::WASH }, theme::hairline(), egui::StrokeKind::Inside);
+  p.rect(rect, theme::RADIUS, if hovered { theme::wash_hover() } else { theme::wash() }, theme::hairline(), egui::StrokeKind::Inside);
   let avatar = Rect::from_center_size(pos2(rect.left() + 22.0, rect.center().y), vec2(28.0, 28.0));
-  p.circle_filled(avatar.center(), 14.0, theme::ACCENT);
+  p.circle_filled(avatar.center(), 14.0, theme::accent());
   let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
   p.text(avatar.center(), Align2::CENTER_CENTER, initial, FontId::new(13.0, theme::semibold()), Color32::WHITE);
-  p.text(pos2(avatar.right() + 10.0, rect.center().y - 8.0), Align2::LEFT_CENTER, name, FontId::new(13.5, theme::medium()), theme::INK);
+  p.text(pos2(avatar.right() + 10.0, rect.center().y - 8.0), Align2::LEFT_CENTER, name, FontId::new(13.5, theme::medium()), theme::ink());
   let sub = credits.map_or_else(|| "Account".to_owned(), |c| format!("{} credits", group_thousands(c)));
-  p.text(pos2(avatar.right() + 10.0, rect.center().y + 9.0), Align2::LEFT_CENTER, sub, FontId::new(11.5, egui::FontFamily::Proportional), theme::MUTED);
-  icons::paint(p, Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(14.0, 14.0)), Icon::Settings, theme::DIM);
+  p.text(pos2(avatar.right() + 10.0, rect.center().y + 9.0), Align2::LEFT_CENTER, sub, FontId::new(11.5, egui::FontFamily::Proportional), theme::muted());
+  icons::paint(p, Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(14.0, 14.0)), Icon::Settings, theme::dim());
   resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Settings")
 }
 
@@ -306,13 +303,13 @@ pub fn page_header(ui: &mut Ui, page: Page, feed_toggles: Option<FeedToggles>) -
   let ui = &mut bar;
   ui.spacing_mut().item_spacing.x = 8.0;
   let (section, leaf) = page.crumbs();
-  widgets::hud(ui, section, theme::MUTED);
+  widgets::hud(ui, section, theme::muted());
   let (chev, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-  icons::paint(ui.painter(), chev, Icon::ChevronRight, theme::FAINT);
-  let galley = widgets::caps(ui, leaf, theme::HUD_SIZE, theme::mono(), theme::HUD_SPACING, theme::BG);
+  icons::paint(ui.painter(), chev, Icon::ChevronRight, theme::faint());
+  let galley = widgets::caps(ui, leaf, theme::HUD_SIZE, theme::mono(), theme::HUD_SPACING, theme::bg());
   let (crumb, _) = ui.allocate_exact_size(galley.size() + vec2(12.0, 8.0), Sense::hover());
-  ui.painter().rect_filled(crumb, 0.0, theme::INK);
-  ui.painter().galley(crumb.center() - galley.size() / 2.0, galley, theme::BG);
+  ui.painter().rect_filled(crumb, 0.0, theme::ink());
+  ui.painter().galley(crumb.center() - galley.size() / 2.0, galley, theme::bg());
   if let Some(t) = feed_toggles {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
       if let Some(m) = view_toggle(ui, t.mode) {
@@ -334,19 +331,19 @@ pub fn page_header(ui: &mut Ui, page: Page, feed_toggles: Option<FeedToggles>) -
 
 fn credits_pill(ui: &mut Ui, credits: u64) -> egui::Response {
   let text = group_thousands(credits);
-  let galley = ui.painter().layout_no_wrap(text, FontId::new(13.0, theme::semibold()), theme::INK);
+  let galley = ui.painter().layout_no_wrap(text, FontId::new(13.0, theme::semibold()), theme::ink());
   let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 40.0, 30.0), Sense::click());
   let hovered = resp.hovered();
-  ui.painter().rect(rect, theme::RADIUS, if hovered { theme::WASH_HOVER } else { theme::WASH }, theme::hairline(), egui::StrokeKind::Inside);
-  icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 16.0, rect.center().y), vec2(14.0, 14.0)), Icon::Coins, theme::INK);
-  ui.painter().galley(pos2(rect.left() + 28.0, rect.center().y - galley.size().y / 2.0), galley, theme::INK);
+  ui.painter().rect(rect, theme::RADIUS, if hovered { theme::wash_hover() } else { theme::wash() }, theme::hairline(), egui::StrokeKind::Inside);
+  icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 16.0, rect.center().y), vec2(14.0, 14.0)), Icon::Coins, theme::ink());
+  ui.painter().galley(pos2(rect.left() + 28.0, rect.center().y - galley.size().y / 2.0), galley, theme::ink());
   resp.on_hover_text("Your credit balance \u{b7} Buy credits").on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn account_menu(ui: &mut Ui, account: &Account<'_>) -> Option<ShellAction> {
   let name = account.display_name.or(account.username).unwrap_or("Account");
   let (rect, resp) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::click());
-  ui.painter().circle(rect.center(), 15.0, theme::ACCENT, Stroke::new(if resp.hovered() { 2.0 } else { 0.0 }, Color32::WHITE));
+  ui.painter().circle(rect.center(), 15.0, theme::accent(), Stroke::new(if resp.hovered() { 2.0 } else { 0.0 }, Color32::WHITE));
   let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
   ui.painter().text(rect.center(), Align2::CENTER_CENTER, initial, FontId::new(13.0, theme::semibold()), Color32::WHITE);
   let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -355,7 +352,7 @@ fn account_menu(ui: &mut Ui, account: &Account<'_>) -> Option<ShellAction> {
     ui.set_min_width(200.0);
     ui.label(egui::RichText::new(name).size(13.0).family(theme::semibold()));
     if let Some(u) = account.username {
-      ui.label(egui::RichText::new(format!("@{u}")).size(11.5).color(theme::MUTED));
+      ui.label(egui::RichText::new(format!("@{u}")).size(11.5).color(theme::muted()));
     }
     ui.add_space(4.0);
     if widgets::menu_row(ui, widgets::RowLead::Icon(Icon::Settings), "Settings", None, false, false, false).clicked() {
@@ -379,15 +376,15 @@ fn view_toggle(ui: &mut Ui, mode: ViewMode) -> Option<ViewMode> {
 fn segmented(ui: &mut Ui, buttons: &[(Icon, &str, bool)]) -> Option<usize> {
   let w = 4.0 + 26.0 * buttons.len() as f32;
   let (rect, _) = ui.allocate_exact_size(vec2(w, 30.0), Sense::hover());
-  ui.painter().rect(rect, theme::RADIUS, Color32::from_white_alpha(10), Stroke::new(1.0, Color32::from_white_alpha(20)), egui::StrokeKind::Inside);
+  ui.painter().rect(rect, theme::RADIUS, theme::wash(), theme::hairline(), egui::StrokeKind::Inside);
   let mut clicked = None;
   for (i, (icon, tip, active)) in buttons.iter().enumerate() {
     let b = Rect::from_min_size(pos2(rect.left() + 3.0 + 26.0 * i as f32, rect.top() + 3.0), vec2(24.0, 24.0));
     let resp = ui.interact(b, Id::new(("segmented", *tip)), Sense::click()).on_hover_text(*tip).on_hover_cursor(egui::CursorIcon::PointingHand);
     if *active || resp.hovered() {
-      ui.painter().rect_filled(b, theme::RADIUS, theme::WASH_HOVER);
+      ui.painter().rect_filled(b, theme::RADIUS, theme::wash_hover());
     }
-    icons::paint(ui.painter(), b.shrink(5.0), *icon, if *active { Color32::WHITE } else { theme::DIM });
+    icons::paint(ui.painter(), b.shrink(5.0), *icon, if *active { theme::ink_strong() } else { theme::dim() });
     if resp.clicked() {
       clicked = Some(i);
     }

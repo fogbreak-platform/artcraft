@@ -60,9 +60,9 @@ pub fn player(ui: &mut Ui, id: Id, audio: &mut AudioPlayer, url: &str, duration_
   let volume_rect = Rect::from_center_size(pos2(rect.right() - 14.0, rect.center().y), vec2(28.0, 28.0));
   volume(ui, id, volume_rect, audio);
   let time = format!("{} / {}", format_time(position), duration.map_or_else(|| "-:--".to_owned(), format_time));
-  let galley = ui.painter().layout_no_wrap(time, FontId::new(11.0, theme::mono()), theme::MUTED);
+  let galley = ui.painter().layout_no_wrap(time, FontId::new(11.0, theme::mono()), theme::muted());
   let time_x = volume_rect.left() - 8.0 - galley.size().x;
-  ui.painter().galley(pos2(time_x, rect.center().y - galley.size().y / 2.0), galley, theme::MUTED);
+  ui.painter().galley(pos2(time_x, rect.center().y - galley.size().y / 2.0), galley, theme::muted());
 
   // The waveform between them.
   let wave = Rect::from_min_max(pos2(button.right() + 10.0, rect.center().y - wave_h / 2.0), pos2(time_x - 10.0, rect.center().y + wave_h / 2.0));
@@ -95,17 +95,17 @@ fn volume(ui: &mut Ui, id: Id, rect: Rect, audio: &mut AudioPlayer) {
   let resp = ui.interact(rect, id.with("volume"), Sense::click()).on_hover_text("Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
   resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Volume"));
   if resp.hovered() || open {
-    ui.painter().rect_filled(rect, theme::RADIUS, theme::WASH);
+    ui.painter().rect_filled(rect, theme::RADIUS, theme::wash());
   }
   let level = audio.track_volume();
-  icons::paint(ui.painter(), rect.shrink(7.0), if level <= 0.0 { Icon::VolumeOff } else { Icon::Volume }, if resp.hovered() || open { theme::INK } else { theme::DIM });
+  icons::paint(ui.painter(), rect.shrink(7.0), if level <= 0.0 { Icon::VolumeOff } else { Icon::Volume }, if resp.hovered() || open { theme::ink() } else { theme::dim() });
   let mut percent = (level * 100.0).round() as u32;
   pickers::popover(&resp, popup_id, |ui| {
     ui.horizontal(|ui| {
       ui.add_space(6.0);
       ui.style_mut().spacing.slider_width = 120.0;
       ui.add(egui::Slider::new(&mut percent, 0..=100).show_value(false));
-      ui.label(egui::RichText::new(percent.to_string()).size(11.0).family(theme::mono()).color(theme::MUTED));
+      ui.label(egui::RichText::new(percent.to_string()).size(11.0).family(theme::mono()).color(theme::muted()));
       ui.add_space(4.0);
     });
   });
@@ -159,9 +159,9 @@ pub fn placeholder_bars(url: &str) -> Vec<f32> {
 pub fn music_tile(ui: &Ui, rect: Rect, round: bool) {
   let p = ui.painter();
   if round {
-    p.circle_filled(rect.center(), rect.width() / 2.0, theme::WASH_HOVER);
+    p.circle_filled(rect.center(), rect.width() / 2.0, theme::wash_hover());
   } else {
-    p.rect(rect, theme::RADIUS, theme::WASH, theme::hairline(), egui::StrokeKind::Inside);
+    p.rect(rect, theme::RADIUS, theme::wash(), theme::hairline(), egui::StrokeKind::Inside);
   }
   icons::paint(p, Rect::from_center_size(rect.center(), rect.size() * 0.42), Icon::Music, theme::fade(Color32::WHITE, 0.75));
 }

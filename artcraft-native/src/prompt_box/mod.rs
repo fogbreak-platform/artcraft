@@ -7,7 +7,7 @@ pub mod editor;
 pub mod model_selector;
 pub mod pickers;
 pub mod refs;
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod ui_tests;
 
 use std::path::PathBuf;
@@ -82,6 +82,7 @@ pub enum PromptBoxAction {
   Deck(DeckAction),
   ClearAll,
   DroppedFiles(Vec<PathBuf>),
+  DroppedBytes(Vec<(String, Vec<u8>)>),
   PastedImage(Vec<u8>),
   /// A mention picked from the dropdown: (label, character token).
   MentionPicked(String, Option<String>),
@@ -101,7 +102,7 @@ pub struct PromptBoxState {
 /// under its own id.
 pub fn show(ui: &mut Ui, prompt: &mut String, refs: &References, state: &mut PromptBoxState, props: &PromptBoxProps<'_>, cache: &mut MediaCache, slots: &mut dyn FnMut(&mut Ui, Slot)) -> Vec<PromptBoxAction> {
   let mut actions = Vec::new();
-  let frame = egui::Frame::new().fill(theme::fade(theme::CONTROLS, 0.95)).stroke(Stroke::new(1.0, if state.focused { theme::ACCENT } else { theme::LINE })).corner_radius(theme::RADIUS).inner_margin(16);
+  let frame = egui::Frame::new().fill(theme::fade(theme::controls(), 0.95)).stroke(Stroke::new(1.0, if state.focused { theme::accent() } else { theme::line() })).corner_radius(theme::RADIUS).inner_margin(16);
   let response = frame.show(ui, |ui| {
     if let Some(banner) = props.banner {
       info_banner(ui, banner);
@@ -178,7 +179,7 @@ fn generate_cluster(ui: &mut Ui, props: &PromptBoxProps<'_>, actions: &mut Vec<P
     actions.push(PromptBoxAction::Generate);
   }
   if let Some(credits) = props.credits {
-    let ink = theme::fade(theme::INK, if props.generate_enabled { 0.8 } else { 0.4 });
+    let ink = theme::fade(theme::ink(), if props.generate_enabled { 0.8 } else { 0.4 });
     let galley = ui.painter().layout_no_wrap(credits.to_string(), FontId::new(13.0, theme::semibold()), ink);
     let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 22.0, 36.0), Sense::hover());
     icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.left() + 7.0, rect.center().y), vec2(14.0, 14.0)), Icon::Coins, ink);
@@ -190,7 +191,7 @@ fn generate_cluster(ui: &mut Ui, props: &PromptBoxProps<'_>, actions: &mut Vec<P
 /// The eraser button and the hairline after it (`PromptClearAllButton`).
 fn clear_all_button(ui: &mut Ui, prompt: &mut String, refs: &References, state: &mut PromptBoxState, extra_input: bool, actions: &mut Vec<PromptBoxAction>) {
   let (rule, _) = ui.allocate_exact_size(vec2(1.0, 20.0), Sense::hover());
-  ui.painter().rect_filled(rule, 0.0, theme::fade(theme::INK, 0.15));
+  ui.painter().rect_filled(rule, 0.0, theme::fade(theme::ink(), 0.15));
   let clearable = !prompt.is_empty() || !refs.is_empty() || extra_input;
   let resp = ui.add_enabled_ui(clearable, |ui| widgets::ghost(ui, Icon::Eraser, None, "Clear all", false)).inner;
   if resp.clicked() {
@@ -208,7 +209,7 @@ fn confirm_clear(ctx: &egui::Context, id: Id, state: &mut PromptBoxState, action
   let resp = widgets::modal(ctx, id.with("confirm-clear"), 420.0, |ui| {
     ui.label(widgets::heading("Clear all?", 20.0));
     ui.add_space(8.0);
-    ui.label(egui::RichText::new("This clears the prompt and also removes the attached references.").color(theme::MUTED));
+    ui.label(egui::RichText::new("This clears the prompt and also removes the attached references.").color(theme::muted()));
     ui.add_space(16.0);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
       if widgets::button(ui, None, "Clear all", widgets::Kind::Danger, 0.0, theme::CONTROL_H).clicked() {
@@ -241,17 +242,17 @@ fn expand_toggle(ui: &mut Ui, id: Id, rect: Rect, state: &mut PromptBoxState) {
 
 fn warning_label(ui: &mut Ui, text: &str) {
   let pulse = (ui.input(|i| i.time) * 2.0).sin() as f32 * 0.25 + 0.75;
-  ui.label(egui::RichText::new(text).size(12.0).color(theme::BAD));
+  ui.label(egui::RichText::new(text).size(12.0).color(theme::bad()));
   let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-  icons::paint(ui.painter(), rect, Icon::Info, theme::fade(theme::BAD, pulse));
+  icons::paint(ui.painter(), rect, Icon::Info, theme::fade(theme::bad(), pulse));
   ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
 }
 
 fn info_banner(ui: &mut Ui, text: &str) {
-  egui::Frame::new().fill(theme::fade(theme::ACCENT, 0.12)).stroke(Stroke::new(1.0, theme::fade(theme::ACCENT, 0.35))).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+  egui::Frame::new().fill(theme::fade(theme::accent(), 0.12)).stroke(Stroke::new(1.0, theme::fade(theme::accent(), 0.35))).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
     ui.horizontal(|ui| {
-      icons::icon(ui, Icon::Info, 14.0, theme::ACCENT_INK);
-      ui.label(egui::RichText::new(text).size(12.5).color(theme::INK));
+      icons::icon(ui, Icon::Info, 14.0, theme::accent_ink());
+      ui.label(egui::RichText::new(text).size(12.5).color(theme::ink()));
     });
   });
   ui.add_space(10.0);
@@ -261,26 +262,45 @@ fn info_banner(ui: &mut Ui, text: &str) {
 fn drop_target(ui: &mut Ui, props: &PromptBoxProps<'_>, rect: Rect, actions: &mut Vec<PromptBoxAction>) {
   let (hovered, dropped) = ui.input(|i| (i.raw.hovered_files.clone(), i.raw.dropped_files.clone()));
   if !dropped.is_empty() {
-    let paths: Vec<PathBuf> = dropped.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect();
+    let mut paths = Vec::new();
+    let mut byte_files = Vec::new();
+    for file in dropped {
+      if let Some(bytes) = file.bytes {
+        let name = if !file.name.is_empty() {
+          file.name
+        } else {
+          file.path.as_deref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("dropped.png").to_owned()
+        };
+        byte_files.push((name, bytes.to_vec()));
+      } else {
+        let path = file.path().to_path_buf();
+        if !path.as_os_str().is_empty() {
+          paths.push(path);
+        }
+      }
+    }
     if !paths.is_empty() {
       actions.push(PromptBoxAction::DroppedFiles(paths));
+    }
+    if !byte_files.is_empty() {
+      actions.push(PromptBoxAction::DroppedBytes(byte_files));
     }
     return;
   }
   if hovered.is_empty() {
     return;
   }
-  let kinds: Vec<Option<RefKind>> = hovered.iter().map(|f| f.path.as_deref().and_then(RefKind::from_path)).collect();
-  // Without paths (some platforms) we can't tell yet: assume it fits.
+  let kinds: Vec<Option<RefKind>> = hovered.iter().map(|f| f.path.as_deref().and_then(RefKind::from_path).or_else(|| (!f.name.is_empty()).then(|| RefKind::from_name(&f.name)).flatten())).collect();
+  // Without paths or filenames we can't tell yet: assume it fits.
   let accepted = kinds.iter().all(|k| k.is_none() || k.is_some_and(|k| props.accepts.contains(&k))) && !props.accepts.is_empty();
   let keyframes = matches!(props.deck, DeckMode::Keyframes { .. });
   let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, props.id.with("drop-overlay")));
-  p.rect_filled(rect, theme::RADIUS, theme::fade(theme::CONTROLS, 0.85));
-  let border = if accepted { theme::fade(Color32::WHITE, 0.6) } else { theme::fade(theme::BAD, 0.8) };
+  p.rect_filled(rect, theme::RADIUS, theme::fade(theme::controls(), 0.85));
+  let border = if accepted { theme::fade(theme::ink_strong(), 0.6) } else { theme::fade(theme::bad(), 0.8) };
   icons::dashed_rect(&p, rect.shrink(1.0), Stroke::new(2.0, border), 6.0, 4.0);
   let chip = Rect::from_center_size(rect.center() - vec2(0.0, 22.0), vec2(36.0, 36.0));
-  p.rect(chip, theme::RADIUS, theme::CONTROLS, theme::hairline(), egui::StrokeKind::Inside);
-  icons::paint(&p, chip.shrink(9.0), if accepted { Icon::Image } else { Icon::AlertCircle }, if accepted { theme::INK } else { theme::BAD });
+  p.rect(chip, theme::RADIUS, theme::controls(), theme::hairline(), egui::StrokeKind::Inside);
+  icons::paint(&p, chip.shrink(9.0), if accepted { Icon::Image } else { Icon::AlertCircle }, if accepted { theme::ink() } else { theme::bad() });
   let names: Vec<&str> = props
     .accepts
     .iter()
@@ -297,32 +317,39 @@ fn drop_target(ui: &mut Ui, props: &PromptBoxProps<'_>, rect: Rect, actions: &mu
   } else {
     ("Drop to add references".to_owned(), names.join(", "))
   };
-  p.text(rect.center() + vec2(0.0, 10.0), Align2::CENTER_CENTER, title, FontId::new(14.0, theme::semibold()), theme::INK);
-  p.text(rect.center() + vec2(0.0, 28.0), Align2::CENTER_CENTER, subtitle, FontId::new(12.0, egui::FontFamily::Proportional), theme::MUTED);
+  p.text(rect.center() + vec2(0.0, 10.0), Align2::CENTER_CENTER, title, FontId::new(14.0, theme::semibold()), theme::ink());
+  p.text(rect.center() + vec2(0.0, 28.0), Align2::CENTER_CENTER, subtitle, FontId::new(12.0, egui::FontFamily::Proportional), theme::muted());
 }
 
 /// Ctrl/Cmd+V with an image on the clipboard. egui only forwards text pastes, so this watches for
 /// the V key's release and reads the image itself.
 fn paste_images(ui: &mut Ui, props: &PromptBoxProps<'_>, actions: &mut Vec<PromptBoxAction>) {
-  if props.accepts.is_empty() {
-    return;
+  #[cfg(target_arch = "wasm32")]
+  {
+    let _ = (ui, props, actions);
   }
-  let released = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if modifiers.command)));
-  if !released {
-    return;
-  }
-  let Ok(mut clipboard) = arboard::Clipboard::new() else {
-    return;
-  };
-  let Ok(image) = clipboard.get_image() else {
-    return;
-  };
-  let Some(rgba) = image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes.into_owned()) else {
-    return;
-  };
-  let mut png = Vec::new();
-  if image::DynamicImage::ImageRgba8(rgba).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).is_ok() {
-    actions.push(PromptBoxAction::PastedImage(png));
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    if props.accepts.is_empty() {
+      return;
+    }
+    let released = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if modifiers.command)));
+    if !released {
+      return;
+    }
+    let Ok(mut clipboard) = arboard::Clipboard::new() else {
+      return;
+    };
+    let Ok(image) = clipboard.get_image() else {
+      return;
+    };
+    let Some(rgba) = image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes.into_owned()) else {
+      return;
+    };
+    let mut png = Vec::new();
+    if image::DynamicImage::ImageRgba8(rgba).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).is_ok() {
+      actions.push(PromptBoxAction::PastedImage(png));
+    }
   }
 }
 
@@ -345,7 +372,7 @@ fn focus_mode(ctx: &egui::Context, prompt: &mut String, refs: &References, state
       let over = editor::is_over_limit(prompt, limit);
       let text = limit.map_or_else(|| format!("{count} / \u{221e}"), |max| format!("{count} / {max}"));
       ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-        ui.label(egui::RichText::new(text).size(11.0).monospace().color(if over { Color32::from_rgb(0xef, 0x44, 0x44) } else { theme::FAINT }));
+        ui.label(egui::RichText::new(text).size(11.0).monospace().color(if over { Color32::from_rgb(0xef, 0x44, 0x44) } else { theme::faint() }));
       });
     }
     ui.push_id("focus-deck", |ui| deck_widget(ui, props, refs, cache, true, actions));

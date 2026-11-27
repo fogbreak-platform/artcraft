@@ -1,0 +1,46 @@
+[package]
+name = "fogbreak-hub"
+description = "Fogbreak Hub browser overlay hosting the media studio UI on wasm32 with Tidal Strata theming and host bridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "fogbreak-hub"
+path = "src/main.rs"
+
+[dependencies]
+artcraft_native = { path = "../artcraft-native" }
+base64.workspace = true
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "accesskit", "persistence", "links"] }
+egui = "0.36"
+log.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+uuid = { workspace = true, features = ["v4", "js"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Blob",
+  "BlobPropertyBag",
+  "CssStyleDeclaration",
+  "CustomEvent",
+  "CustomEventInit",
+  "Document",
+  "Element",
+  "Event",
+  "EventTarget",
+  "HtmlAnchorElement",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "Location",
+  "MediaQueryList",
+  "Url",
+  "UrlSearchParams",
+  "Window",
+] }

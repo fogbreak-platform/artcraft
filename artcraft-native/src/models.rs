@@ -162,18 +162,18 @@ impl ModelInfo {
 }
 
 /// Builds a model from the server's image listing.
-pub fn image_model(d: &artcraft_client::endpoints::omni_gen::models::image::omni_gen_list_image_models::OmniGenImageModelDetails) -> ModelInfo {
-  let id = String::from(d.model.clone());
-  let mut m = base(&id, MediaKind::Image, d.full_name.as_deref(), d.model_creator.clone().map(String::from));
+pub fn image_model(d: &crate::backend::wire::ImageModel) -> ModelInfo {
+  let id = d.model.clone();
+  let mut m = base(&id, MediaKind::Image, d.full_name.as_deref(), d.model_creator.clone());
   m.disabled = d.is_disabled.unwrap_or(false);
   m.prompt_supported = d.text_prompt_supported.unwrap_or(true);
   m.prompt_max = d.text_prompt_max_length.map(usize::from).or_else(|| default_prompt_max(&id));
   m.aspect_ratios = strings(&d.aspect_ratio_options);
-  m.aspect_default = d.aspect_ratio_default.clone().map(String::from);
+  m.aspect_default = d.aspect_ratio_default.clone();
   m.resolutions = strings(&d.resolution_options);
-  m.resolution_default = d.resolution_default.clone().map(String::from);
+  m.resolution_default = d.resolution_default.clone();
   m.qualities = strings(&d.quality_options);
-  m.quality_default = d.default_quality.clone().map(String::from);
+  m.quality_default = d.default_quality.clone();
   m.batch_sizes = batch_sizes(d.batch_size_options.as_deref(), d.batch_size_min, d.batch_size_max);
   m.batch_default = d.batch_size_default.unwrap_or(1);
   m.image_refs_max = if d.image_refs_supported.unwrap_or(false) { d.image_refs_max.map_or(1, usize::from) } else { 0 };
@@ -181,9 +181,9 @@ pub fn image_model(d: &artcraft_client::endpoints::omni_gen::models::image::omni
 }
 
 /// Builds a model from the server's video listing.
-pub fn video_model(d: &artcraft_client::endpoints::omni_gen::models::video::omni_gen_list_video_models::OmniGenVideoModelDetails) -> ModelInfo {
-  let id = String::from(d.model.clone());
-  let mut m = base(&id, MediaKind::Video, d.full_name.as_deref(), d.model_creator.clone().map(String::from));
+pub fn video_model(d: &crate::backend::wire::VideoModel) -> ModelInfo {
+  let id = d.model.clone();
+  let mut m = base(&id, MediaKind::Video, d.full_name.as_deref(), d.model_creator.clone());
   if let Some(short) = d.extra_info_short.as_deref().filter(|s| !s.is_empty()) {
     m.description = short.to_owned();
   }
@@ -203,13 +203,13 @@ pub fn video_model(d: &artcraft_client::endpoints::omni_gen::models::video::omni
   m.audio_refs_max_secs = d.audio_references_max_total_duration_seconds;
   m.character_refs_max = max(d.character_references_supported, d.character_references_max);
   m.aspect_ratios = strings(&d.aspect_ratio_options);
-  m.aspect_default = d.aspect_ratio_default.clone().map(String::from);
+  m.aspect_default = d.aspect_ratio_default.clone();
   m.resolutions = strings(&d.resolution_options);
-  m.resolution_default = d.resolution_default.clone().map(String::from);
+  m.resolution_default = d.resolution_default.clone();
   m.qualities = strings(&d.quality_options);
-  m.quality_default = d.default_quality.clone().map(String::from);
+  m.quality_default = d.default_quality.clone();
   m.bitrates = strings(&d.bitrate_options);
-  m.bitrate_default = d.bitrate_default.clone().map(String::from);
+  m.bitrate_default = d.bitrate_default.clone();
   m.output_formats = d.output_format_options.clone().unwrap_or_default();
   m.output_format_default = d.output_format_default.clone();
   m.duration_options = d.duration_seconds_options.clone().unwrap_or_default();

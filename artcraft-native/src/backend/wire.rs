@@ -306,6 +306,143 @@ pub struct UploadResponse {
   pub media_file_token: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginChallengeState {
+  #[default]
+  Pending,
+  Completed,
+  Expired,
+  Failed,
+  #[serde(other)]
+  Unknown,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SessionCredits {
+  pub success: bool,
+  pub sum_total_credits: Option<i64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct FileResponse {
+  pub success: bool,
+  pub media_file: MediaFile,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct PasswordAuthResponse {
+  pub success: bool,
+  pub signed_session: Option<String>,
+  pub maybe_error_message: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct CreateLoginChallengeResponse {
+  pub success: bool,
+  pub device_token: String,
+  pub verification_url: String,
+  pub confirmation_code: String,
+  pub expires_at: String,
+  pub poll_interval_seconds: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct PollLoginChallengeResponse {
+  pub success: bool,
+  pub status: LoginChallengeState,
+  pub maybe_failure_type: Option<String>,
+  pub maybe_signed_session: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ImageModels {
+  pub success: bool,
+  pub models: Vec<ImageModel>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ImageModel {
+  pub model: String,
+  pub model_creator: Option<String>,
+  pub full_name: Option<String>,
+  pub text_prompt_supported: Option<bool>,
+  pub text_prompt_max_length: Option<u16>,
+  pub image_refs_supported: Option<bool>,
+  pub image_refs_max: Option<u16>,
+  pub aspect_ratio_options: Option<Vec<String>>,
+  pub aspect_ratio_default: Option<String>,
+  pub resolution_options: Option<Vec<String>>,
+  pub resolution_default: Option<String>,
+  pub quality_options: Option<Vec<String>>,
+  pub default_quality: Option<String>,
+  pub batch_size_min: Option<u16>,
+  pub batch_size_max: Option<u16>,
+  pub batch_size_options: Option<Vec<u16>>,
+  pub batch_size_default: Option<u16>,
+  pub is_disabled: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct VideoModels {
+  pub success: bool,
+  pub models: Vec<VideoModel>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct VideoModel {
+  pub model: String,
+  pub model_creator: Option<String>,
+  pub full_name: Option<String>,
+  pub extra_info_short: Option<String>,
+  pub text_to_video_supported: Option<bool>,
+  pub text_prompt_supported: Option<bool>,
+  pub text_prompt_max_length: Option<u16>,
+  pub starting_keyframe_supported: Option<bool>,
+  pub starting_keyframe_required: Option<bool>,
+  pub ending_keyframe_supported: Option<bool>,
+  pub image_references_supported: Option<bool>,
+  pub image_references_max: Option<u16>,
+  pub video_references_supported: Option<bool>,
+  pub video_references_max: Option<u16>,
+  pub video_references_max_total_duration_seconds: Option<u16>,
+  pub audio_references_supported: Option<bool>,
+  pub audio_references_max: Option<u16>,
+  pub audio_references_max_total_duration_seconds: Option<u16>,
+  pub character_references_supported: Option<bool>,
+  pub character_references_max: Option<u16>,
+  pub show_generate_with_sound_toggle: Option<bool>,
+  pub aspect_ratio_options: Option<Vec<String>>,
+  pub aspect_ratio_default: Option<String>,
+  pub resolution_options: Option<Vec<String>>,
+  pub resolution_default: Option<String>,
+  pub bitrate_options: Option<Vec<String>>,
+  pub bitrate_default: Option<String>,
+  pub output_format_options: Option<Vec<String>>,
+  pub output_format_default: Option<String>,
+  pub quality_options: Option<Vec<String>>,
+  pub default_quality: Option<String>,
+  pub duration_seconds_min: Option<u16>,
+  pub duration_seconds_max: Option<u16>,
+  pub duration_seconds_max_with_image_references: Option<u16>,
+  pub duration_seconds_options: Option<Vec<u16>>,
+  pub duration_seconds_default: Option<u16>,
+  pub batch_size_min: Option<u16>,
+  pub batch_size_max: Option<u16>,
+  pub batch_size_options: Option<Vec<u16>>,
+  pub batch_size_default: Option<u16>,
+  pub is_disabled: Option<bool>,
+}
+
 /// Parses an RFC 3339 timestamp into unix seconds (0 when absent or malformed).
 pub fn unix_secs(timestamp: &str) -> i64 {
   chrono::DateTime::parse_from_rfc3339(timestamp).map(|t| t.timestamp()).unwrap_or(0)

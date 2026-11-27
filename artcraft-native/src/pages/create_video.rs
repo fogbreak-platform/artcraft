@@ -2,8 +2,6 @@
 //! model's pickers (aspect ratio, resolution, bitrate, format, duration, sound, count), the cost,
 //! and the video feed.
 
-use std::path::PathBuf;
-
 use egui::{Id, Ui};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -93,6 +91,17 @@ impl CreateVideoPage {
     self.box_height = box_height;
   }
 
+  pub fn trigger_generate(&mut self, env: &mut Env<'_>) {
+    let model = common::selected_model(&env.catalog.video_page, self.settings.model.as_deref(), DEFAULT_VIDEO_MODEL).cloned();
+    self.generate(env, model.as_ref());
+  }
+
+  pub fn attach_bytes(&mut self, env: &mut Env<'_>, name: String, bytes: Vec<u8>) {
+    let model = common::selected_model(&env.catalog.video_page, self.settings.model.as_deref(), DEFAULT_VIDEO_MODEL);
+    let limits = model.map(|m| deck_limits(m, env.signed_in));
+    self.add_inputs(env, vec![common::PickedInput::Bytes(name, bytes)], ImageSlot::Reference, limits.as_ref());
+  }
+
   fn prompt_box(&mut self, ui: &mut Ui, env: &mut Env<'_>, model: Option<&ModelInfo>) {
     let mode = self.settings.input_mode;
     let reference = mode == InputMode::Reference;
@@ -158,6 +167,12 @@ impl CreateVideoPage {
     if open_characters {
       env.requests.push(AppRequest::OpenCharacters);
     }
+    for (slot, key) in [(ImageSlot::Reference, "video-pick-ref"), (ImageSlot::FirstFrame, "video-pick-first"), (ImageSlot::LastFrame, "video-pick-last")] {
+      let picked = common::take_picked(&env.ctx, Id::new(key));
+      if !picked.is_empty() {
+        self.add_inputs(env, picked, slot, limits.as_ref());
+      }
+    }
     for action in actions {
       self.handle(action, env, model, limits.as_ref());
     }
@@ -173,8 +188,16 @@ impl CreateVideoPage {
       PromptBoxAction::Deck(deck) => match deck {
         DeckAction::Upload { kinds, slot } => {
           let multiple = slot == ImageSlot::Reference;
-          let paths = common::pick_files(&kinds, multiple);
-          self.add_files(env, &paths, slot, limits);
+          let target = Id::new(match slot {
+            ImageSlot::Reference => "video-pick-ref",
+            ImageSlot::FirstFrame => "video-pick-first",
+            ImageSlot::LastFrame => "video-pick-last",
+          });
+          common::request_files(&env.ctx, target, &kinds, multiple);
+          let picked = common::take_picked(&env.ctx, target);
+          if !picked.is_empty() {
+            self.add_inputs(env, picked, slot, limits);
+          }
         },
         DeckAction::Library { kind, slot } => {
           let max = match slot {
@@ -194,7 +217,7 @@ impl CreateVideoPage {
           self.refs.images.insert(to.min(self.refs.images.len()), item);
         },
         DeckAction::Preview(id) => match self.refs.find_mut(id) {
-          // Audio cards play and stop on click (the webapp's DeckCard).
+          // Audio cards play and stop on click.
           Some(r) if r.kind == RefKind::Audio => {
             if let Some(url) = r.full_url.clone() {
               env.requests.push(AppRequest::ToggleAudio { ref_id: id, url });
@@ -209,7 +232,14 @@ impl CreateVideoPage {
         },
         DeckAction::SwapFrames => self.refs.swap_frames(),
       },
-      PromptBoxAction::DroppedFiles(paths) => self.add_files(env, &paths, ImageSlot::Reference, limits),
+      PromptBoxAction::DroppedFiles(paths) => {
+        let inputs = paths.into_iter().map(common::PickedInput::Path).collect();
+        self.add_inputs(env, inputs, ImageSlot::Reference, limits);
+      },
+      PromptBoxAction::DroppedBytes(files) => {
+        let inputs = files.into_iter().map(|(n, b)| common::PickedInput::Bytes(n, b)).collect();
+        self.add_inputs(env, inputs, ImageSlot::Reference, limits);
+      },
       PromptBoxAction::MentionPicked(label, Some(token)) => {
         self.character_picks.insert(label.trim_start_matches('@').to_owned(), token);
       },
@@ -232,18 +262,18 @@ impl CreateVideoPage {
 
   /// Routes picked or dropped files (`handleDroppedFiles`): keyframe mode fills the first frame,
   /// then the last; reference mode adds each kind up to its limit.
-  fn add_files(&mut self, env: &mut Env<'_>, paths: &[PathBuf], slot: ImageSlot, limits: Option<&DeckLimits>) {
+  fn add_inputs(&mut self, env: &mut Env<'_>, inputs: Vec<common::PickedInput>, slot: ImageSlot, limits: Option<&DeckLimits>) {
     let model = common::selected_model(&env.catalog.video_page, self.settings.model.as_deref(), DEFAULT_VIDEO_MODEL).cloned();
-    for path in paths {
-      let Some(kind) = RefKind::from_path(path) else {
-        env.toasts.error(format!("{} isn't a supported file", common::file_name(path)));
+    for input in inputs {
+      let Some(kind) = input.ref_kind() else {
+        env.toasts.error(format!("{} isn't a supported file", input.name()));
         continue;
       };
       match (self.settings.input_mode, kind) {
         (InputMode::Keyframe, RefKind::Image) => {
           let target = if slot == ImageSlot::Reference { self.free_keyframe(model.as_ref()) } else { Some(slot) };
           match target {
-            Some(slot) => common::upload_path(env, &mut self.refs, path, kind, slot),
+            Some(slot) => common::upload_input(env, &mut self.refs, input, kind, slot),
             None => env.toasts.error(frames_full_message(model.as_ref())),
           }
         },
@@ -263,7 +293,7 @@ impl CreateVideoPage {
             let secs = if kind == RefKind::Video { l.max_video_secs } else { l.max_audio_secs };
             env.toasts.error(max_message(kind, max, secs.filter(|_| kind != RefKind::Image)));
           } else {
-            common::upload_path(env, &mut self.refs, path, kind, ImageSlot::Reference);
+            common::upload_input(env, &mut self.refs, input, kind, ImageSlot::Reference);
           }
         },
       }

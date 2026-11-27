@@ -3,7 +3,6 @@
 //! references, the cost, and the audio feed.
 
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
 
 use egui::{Align2, Color32, FontId, Id, Rect, Response, Sense, Stroke, TextureHandle, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
@@ -108,6 +107,17 @@ impl CreateAudioPage {
     self.box_height = box_height;
   }
 
+  pub fn trigger_generate(&mut self, env: &mut Env<'_>) {
+    let model = common::selected_model(&env.catalog.audio_page, self.settings.model.as_deref(), DEFAULT_AUDIO_MODEL).cloned();
+    self.generate(env, model.as_ref());
+  }
+
+  pub fn attach_bytes(&mut self, env: &mut Env<'_>, name: String, bytes: Vec<u8>) {
+    if let Some(m) = common::selected_model(&env.catalog.audio_page, self.settings.model.as_deref(), DEFAULT_AUDIO_MODEL).cloned() {
+      self.add_dropped_inputs(env, &m, vec![common::PickedInput::Bytes(name, bytes)]);
+    }
+  }
+
   fn prompt_box(&mut self, ui: &mut Ui, env: &mut Env<'_>, model: Option<&ModelInfo>) {
     let missing_ref = model.is_some_and(|m| self.missing_required_ref(m));
     let accepts: Vec<RefKind> = model.map_or_else(Vec::new, |m| [(RefKind::Audio, m.audio_refs_max), (RefKind::Image, m.image_refs_max)].into_iter().filter(|(_, n)| *n > 0).map(|(k, _)| k).collect());
@@ -143,6 +153,14 @@ impl CreateAudioPage {
       self.settings.model = Some(id);
     }
     if let Some(m) = model {
+      let audio_picked = common::take_picked(&env.ctx, Id::new("audio-pick-audio"));
+      if !audio_picked.is_empty() {
+        self.add_audio_inputs(env, m, audio_picked);
+      }
+      if let Some(img) = common::take_picked(&env.ctx, Id::new("audio-pick-image")).into_iter().next() {
+        self.make_room_for_image(env);
+        common::upload_input(env, &mut self.refs, img, RefKind::Image, ImageSlot::Reference);
+      }
       for action in row_actions {
         self.row_action(action, env, m);
       }
@@ -155,7 +173,6 @@ impl CreateAudioPage {
   fn handle(&mut self, action: PromptBoxAction, env: &mut Env<'_>, model: Option<&ModelInfo>) {
     match action {
       PromptBoxAction::Generate => self.generate(env, model),
-      // Toggles and tuning stay as they are.
       PromptBoxAction::ClearAll => {
         self.settings.prompt.clear();
         self.settings.style_prompt.clear();
@@ -163,7 +180,14 @@ impl CreateAudioPage {
       },
       PromptBoxAction::DroppedFiles(paths) => {
         if let Some(m) = model {
-          self.add_dropped(env, m, &paths);
+          let inputs: Vec<common::PickedInput> = paths.into_iter().map(common::PickedInput::Path).collect();
+          self.add_dropped_inputs(env, m, inputs);
+        }
+      },
+      PromptBoxAction::DroppedBytes(files) => {
+        if let Some(m) = model {
+          let inputs: Vec<common::PickedInput> = files.into_iter().map(|(n, b)| common::PickedInput::Bytes(n, b)).collect();
+          self.add_dropped_inputs(env, m, inputs);
         }
       },
       PromptBoxAction::PastedImage(png) => match model {
@@ -180,17 +204,23 @@ impl CreateAudioPage {
   fn row_action(&mut self, action: RowAction, env: &mut Env<'_>, m: &ModelInfo) {
     match action {
       RowAction::AddAudio => {
-        let paths = common::pick_files(&[RefKind::Audio], m.audio_refs_max > 1);
-        self.add_audio(env, m, &paths);
+        let target = Id::new("audio-pick-audio");
+        common::request_files(&env.ctx, target, &[RefKind::Audio], m.audio_refs_max > 1);
+        let picked = common::take_picked(&env.ctx, target);
+        if !picked.is_empty() {
+          self.add_audio_inputs(env, m, picked);
+        }
       },
       RowAction::AudioFromLibrary => {
         let max = m.audio_refs_max.saturating_sub(self.refs.audios.len()).max(1);
         env.requests.push(AppRequest::PickFromLibrary { kind: RefKind::Audio, slot: ImageSlot::Reference, max, page: MediaKind::Audio });
       },
       RowAction::AddImage => {
-        if let Some(path) = common::pick_files(&[RefKind::Image], false).first() {
+        let target = Id::new("audio-pick-image");
+        common::request_files(&env.ctx, target, &[RefKind::Image], false);
+        if let Some(img) = common::take_picked(&env.ctx, target).into_iter().next() {
           self.make_room_for_image(env);
-          common::upload_path(env, &mut self.refs, path, RefKind::Image, ImageSlot::Reference);
+          common::upload_input(env, &mut self.refs, img, RefKind::Image, ImageSlot::Reference);
         }
       },
       RowAction::Remove(id) => {
@@ -207,27 +237,35 @@ impl CreateAudioPage {
     }
   }
 
-  /// Dropped files (`usePromptBoxDrop`): audio wins over images; only the first image counts.
-  fn add_dropped(&mut self, env: &mut Env<'_>, m: &ModelInfo, paths: &[PathBuf]) {
-    let audios: Vec<PathBuf> = paths.iter().filter(|p| RefKind::from_path(p) == Some(RefKind::Audio)).cloned().collect();
-    let image = paths.iter().find(|p| RefKind::from_path(p) == Some(RefKind::Image));
+  /// Dropped files: audio wins over images; only the first image counts.
+  fn add_dropped_inputs(&mut self, env: &mut Env<'_>, m: &ModelInfo, inputs: Vec<common::PickedInput>) {
+    let was_empty = inputs.is_empty();
+    let mut audios = Vec::new();
+    let mut first_image = None;
+    for input in inputs {
+      match input.ref_kind() {
+        Some(RefKind::Audio) => audios.push(input),
+        Some(RefKind::Image) if first_image.is_none() => first_image = Some(input),
+        _ => {},
+      }
+    }
     if !audios.is_empty() {
-      self.add_audio(env, m, &audios);
-    } else if let Some(path) = image {
+      self.add_audio_inputs(env, m, audios);
+    } else if let Some(img) = first_image {
       if m.image_refs_max == 0 {
         env.toasts.error("Image references aren't available here");
         return;
       }
       self.make_room_for_image(env);
-      common::upload_path(env, &mut self.refs, path, RefKind::Image, ImageSlot::Reference);
-    } else if !paths.is_empty() {
+      common::upload_input(env, &mut self.refs, img, RefKind::Image, ImageSlot::Reference);
+    } else if !was_empty {
       env.toasts.error(format!("Only {} files can be added here", accepted_kinds(m)));
     }
   }
 
   /// Uploads audio tracks into the free slots (dropping an image reference: they don't mix).
-  fn add_audio(&mut self, env: &mut Env<'_>, m: &ModelInfo, paths: &[PathBuf]) {
-    if paths.is_empty() {
+  fn add_audio_inputs(&mut self, env: &mut Env<'_>, m: &ModelInfo, inputs: Vec<common::PickedInput>) {
+    if inputs.is_empty() {
       return;
     }
     if m.audio_refs_max == 0 {
@@ -235,15 +273,15 @@ impl CreateAudioPage {
       return;
     }
     let free = m.audio_refs_max.saturating_sub(self.refs.audios.len());
-    if paths.len() > free {
+    if inputs.len() > free {
       env.toasts.error(format!("Max {} audio track{}", m.audio_refs_max, if m.audio_refs_max == 1 { "" } else { "s" }));
     }
     if free == 0 {
       return;
     }
     self.make_room_for_audio(env.toasts);
-    for path in paths.iter().take(free) {
-      common::upload_path(env, &mut self.refs, path, RefKind::Audio, ImageSlot::Reference);
+    for input in inputs.into_iter().take(free) {
+      common::upload_input(env, &mut self.refs, input, RefKind::Audio, ImageSlot::Reference);
     }
   }
 
@@ -425,7 +463,7 @@ fn beat_and_key(ui: &mut Ui, caps: &AudioCaps, s: &mut AudioSettings) {
           setting_name(ui, "BPM");
           ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             setting_value(ui, &s.bpm.map_or_else(|| "Auto".to_owned(), |b| b.to_string()));
-            if s.bpm.is_some() && ui.add(egui::Button::new(egui::RichText::new("Auto").size(11.5).color(theme::ACCENT_INK)).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            if s.bpm.is_some() && ui.add(egui::Button::new(egui::RichText::new("Auto").size(11.5).color(theme::accent_ink())).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
               s.bpm = None;
             }
           });
@@ -501,10 +539,10 @@ fn reference_row(ui: &mut Ui, m: &ModelInfo, refs: &References, playing: Option<
   ui.horizontal_wrapped(|ui| {
     ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
     if m.audio_refs_max > 0 {
-      icons::icon(ui, Icon::Music, 14.0, theme::MUTED);
-      ui.label(egui::RichText::new(format!("Audio Track ({}/{})", refs.audios.len(), m.audio_refs_max)).size(12.5).color(theme::MUTED));
+      icons::icon(ui, Icon::Music, 14.0, theme::muted());
+      ui.label(egui::RichText::new(format!("Audio Track ({}/{})", refs.audios.len(), m.audio_refs_max)).size(12.5).color(theme::muted()));
       if m.audio.requires_audio_ref && refs.audios.is_empty() {
-        ui.label(egui::RichText::new("required").size(12.5).color(theme::BAD));
+        ui.label(egui::RichText::new("required").size(12.5).color(theme::bad()));
       }
       for (i, r) in refs.audios.iter().enumerate() {
         audio_tile(ui, i, r, playing == Some(r.id), actions);
@@ -521,7 +559,7 @@ fn reference_row(ui: &mut Ui, m: &ModelInfo, refs: &References, playing: Option<
     }
     if m.image_refs_max > 0 {
       ui.add_space(8.0);
-      ui.label(egui::RichText::new("Image").size(12.5).color(theme::MUTED));
+      ui.label(egui::RichText::new("Image").size(12.5).color(theme::muted()));
       match refs.images.first() {
         Some(r) => image_tile(ui, r, image, actions),
         None => {
@@ -541,32 +579,32 @@ fn reference_row(ui: &mut Ui, m: &ModelInfo, refs: &References, playing: Option<
 fn audio_tile(ui: &mut Ui, index: usize, r: &RefMedia, playing: bool, actions: &mut Vec<RowAction>) {
   let uploading = r.status == RefStatus::Uploading;
   let text = if uploading { format!("Audio {}", index + 1) } else { format!("Audio {} \u{b7} {}s", index + 1, r.duration_secs.round() as i64) };
-  let galley = ui.painter().layout_no_wrap(text, FontId::new(12.5, theme::medium()), theme::INK);
+  let galley = ui.painter().layout_no_wrap(text, FontId::new(12.5, theme::medium()), theme::ink());
   let (rect, _) = ui.allocate_exact_size(vec2(6.0 + 24.0 + 8.0 + galley.size().x + 6.0 + 20.0 + 6.0, theme::CONTROL_H), Sense::hover());
-  ui.painter().rect(rect, theme::RADIUS, theme::CONTROLS, Stroke::new(1.0, theme::LINE), egui::StrokeKind::Inside);
+  ui.painter().rect(rect, theme::RADIUS, theme::controls(), Stroke::new(1.0, theme::line()), egui::StrokeKind::Inside);
   let play = Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(24.0, 24.0));
   if uploading {
-    icons::paint_spinner(ui, play.shrink(4.0), theme::MUTED);
+    icons::paint_spinner(ui, play.shrink(4.0), theme::muted());
   } else {
     let resp = ui.interact(play, Id::new(("audio-ref-play", r.id)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let label = if playing { "Stop" } else { "Play" };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let fill = match (playing, resp.hovered()) {
-      (true, _) => theme::ACCENT,
-      (false, true) => theme::WASH_HOVER,
-      (false, false) => theme::WASH,
+      (true, _) => theme::accent(),
+      (false, true) => theme::wash_hover(),
+      (false, false) => theme::wash(),
     };
     ui.painter().circle_filled(play.center(), 12.0, fill);
     if playing {
       ui.painter().rect_filled(Rect::from_center_size(play.center(), vec2(8.0, 8.0)), 1.0, Color32::WHITE);
     } else {
-      icons::paint(ui.painter(), play.shrink(7.0).translate(vec2(1.0, 0.0)), Icon::Play, theme::INK);
+      icons::paint(ui.painter(), play.shrink(7.0).translate(vec2(1.0, 0.0)), Icon::Play, theme::ink());
     }
     if resp.clicked() {
       actions.push(RowAction::Toggle(r.id));
     }
   }
-  ui.painter().galley(pos2(play.right() + 8.0, rect.center().y - galley.size().y / 2.0), galley, theme::INK);
+  ui.painter().galley(pos2(play.right() + 8.0, rect.center().y - galley.size().y / 2.0), galley, theme::ink());
   let remove = Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(20.0, 20.0));
   if x_button(ui, remove, Id::new(("audio-ref-remove", r.id)), "Remove audio", true) {
     actions.push(RowAction::Remove(r.id));
@@ -576,7 +614,7 @@ fn audio_tile(ui: &mut Ui, index: usize, r: &RefMedia, playing: bool, actions: &
 /// The image reference: a 36 px thumbnail with a remove × on hover.
 fn image_tile(ui: &mut Ui, r: &RefMedia, texture: Option<&TextureHandle>, actions: &mut Vec<RowAction>) {
   let (rect, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-  ui.painter().rect(rect, theme::RADIUS, theme::CONTROLS, Stroke::new(1.0, theme::LINE), egui::StrokeKind::Inside);
+  ui.painter().rect(rect, theme::RADIUS, theme::controls(), Stroke::new(1.0, theme::line()), egui::StrokeKind::Inside);
   if let Some(t) = texture {
     egui::Image::new(t).uv(cover_uv(t.size_vec2())).corner_radius(theme::RADIUS).paint_at(ui, rect.shrink(1.0));
   }
@@ -596,7 +634,7 @@ fn style_row(ui: &mut Ui, style: &mut String) {
   hairline(ui);
   ui.add_space(6.0);
   ui.horizontal(|ui| {
-    icons::icon(ui, Icon::Tags, 14.0, theme::DIM);
+    icons::icon(ui, Icon::Tags, 14.0, theme::dim());
     let clear_w = if style.is_empty() { 0.0 } else { 28.0 };
     ui.add(egui::TextEdit::singleline(style).id_salt("audio-style").hint_text(STYLE_PLACEHOLDER).frame(egui::Frame::NONE).font(FontId::new(14.0, egui::FontFamily::Proportional)).desired_width(ui.available_width() - clear_w));
     if !style.is_empty() {
@@ -613,7 +651,7 @@ fn x_button(ui: &mut Ui, rect: Rect, id: Id, label: &str, shown: bool) -> bool {
   let resp = ui.interact(rect, id, Sense::click());
   resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
   if shown || resp.hovered() {
-    let fill = if resp.hovered() { theme::fade(theme::DANGER, 0.7) } else { Color32::from_black_alpha(128) };
+    let fill = if resp.hovered() { theme::fade(theme::danger(), 0.7) } else { Color32::from_black_alpha(128) };
     ui.painter().circle_filled(rect.center(), rect.width() / 2.0, fill);
     icons::paint(ui.painter(), rect.shrink(rect.width() * 0.27), Icon::X, Color32::WHITE);
   }
@@ -624,12 +662,12 @@ fn x_button(ui: &mut Ui, rect: Rect, id: Id, label: &str, shown: bool) -> bool {
 fn choice_chip(ui: &mut Ui, label: &str, selected: bool, width: f32, tooltip: &str) -> Response {
   let (rect, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
   let (fill, border) = match (selected, resp.hovered()) {
-    (true, _) => (theme::WASH_HOVER, theme::fade(Color32::WHITE, 0.8)),
-    (false, true) => (theme::WASH, theme::LINE_STRONG),
-    (false, false) => (Color32::TRANSPARENT, theme::LINE),
+    (true, _) => (theme::wash_hover(), theme::fade(Color32::WHITE, 0.8)),
+    (false, true) => (theme::wash(), theme::line_strong()),
+    (false, false) => (Color32::TRANSPARENT, theme::line()),
   };
   ui.painter().rect(rect, theme::RADIUS, fill, Stroke::new(1.0, border), egui::StrokeKind::Inside);
-  ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, FontId::new(12.5, theme::medium()), if selected { theme::INK } else { theme::MUTED });
+  ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, FontId::new(12.5, theme::medium()), if selected { theme::ink() } else { theme::muted() });
   resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label));
   resp.on_hover_text(tooltip).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -650,11 +688,11 @@ fn full_slider<N: egui::emath::Numeric>(ui: &mut Ui, number: &mut N, range: Rang
 }
 
 fn setting_name(ui: &mut Ui, name: &str) {
-  ui.label(egui::RichText::new(name).size(12.0).color(theme::MUTED));
+  ui.label(egui::RichText::new(name).size(12.0).color(theme::muted()));
 }
 
 fn setting_value(ui: &mut Ui, value: &str) {
-  ui.label(egui::RichText::new(value).size(12.0).family(theme::semibold()).color(theme::INK));
+  ui.label(egui::RichText::new(value).size(12.0).family(theme::semibold()).color(theme::ink()));
 }
 
 fn padded(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {

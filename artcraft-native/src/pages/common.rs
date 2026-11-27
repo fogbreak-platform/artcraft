@@ -1,8 +1,9 @@
 //! What the create pages share: the page shell (`DesktopCreatePageShell`), uploading references,
 //! cost-estimate bookkeeping and the app-level requests pages make.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use egui::{Align2, Color32, Id, Mesh, Order, Rect, Ui, pos2, vec2};
 use serde_json::{Map, Value};
@@ -193,7 +194,7 @@ fn handle_feed_actions(env: &mut Env<'_>, kind: MediaKind, feed: &mut FeedStore,
 pub fn selection_bar(ui: &Ui, area: Rect, bottom: f32, feed: &mut FeedStore, kind: MediaKind, requests: &mut Vec<AppRequest>) {
   let pos = pos2(area.center().x, area.bottom() - bottom);
   egui::Area::new(Id::new(("selection-bar", kind.label()))).order(Order::Foreground).pivot(Align2::CENTER_BOTTOM).fixed_pos(pos).show(ui.ctx(), |ui| {
-    egui::Frame::new().fill(theme::fade(theme::PANEL, 0.95)).stroke(theme::hairline()).corner_radius(egui::CornerRadius::same(24)).inner_margin(egui::Margin::symmetric(10, 8)).shadow(theme::shadow()).show(ui, |ui| {
+    egui::Frame::new().fill(theme::fade(theme::panel(), 0.95)).stroke(theme::hairline()).corner_radius(egui::CornerRadius::same(24)).inner_margin(egui::Margin::symmetric(10, 8)).shadow(theme::shadow()).show(ui, |ui| {
       ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         ui.add_space(6.0);
@@ -224,7 +225,7 @@ fn empty_state(ui: &mut Ui, env: &mut Env<'_>, area: Rect, bottom_offset: f32, t
   let mut child = ui.new_child(egui::UiBuilder::new().max_rect(section.shrink2(vec2(40.0, 52.0))));
   child.label(widgets::heading(title, 48.0));
   child.add_space(12.0);
-  child.label(egui::RichText::new(subtitle).size(16.0).color(theme::MUTED));
+  child.label(egui::RichText::new(subtitle).size(16.0).color(theme::muted()));
   if !env.signed_in {
     child.add_space(24.0);
     if widgets::button(&mut child, Some(crate::ui::icons::Icon::Sparkles), "Sign in to create", widgets::Kind::Primary, 0.0, 44.0).clicked() {
@@ -237,7 +238,7 @@ fn empty_state(ui: &mut Ui, env: &mut Env<'_>, area: Rect, bottom_offset: f32, t
 fn bottom_fade(ui: &Ui, area: Rect) {
   let band = Rect::from_min_max(pos2(area.left(), area.bottom() - 192.0), area.max);
   let mut mesh = Mesh::default();
-  let (top, bottom) = (Color32::TRANSPARENT, theme::BG);
+  let (top, bottom) = (Color32::TRANSPARENT, theme::bg());
   mesh.colored_vertex(band.left_top(), top);
   mesh.colored_vertex(band.right_top(), top);
   mesh.colored_vertex(band.right_bottom(), bottom);
@@ -256,27 +257,140 @@ pub fn selected_model<'a>(models: &'a [crate::models::ModelInfo], selected: Opti
 // --- References -------------------------------------------------------------------------------
 
 /// Starts uploading `path` into `slot` (or the deck for videos and audio).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn upload_path(env: &mut Env<'_>, refs: &mut References, path: &Path, kind: RefKind, slot: ImageSlot) {
-  if kind == RefKind::Video && !path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("mp4")) {
+  let name = file_name(path);
+  match std::fs::read(path) {
+    Ok(bytes) => upload_bytes(env, refs, name, bytes, kind, slot),
+    Err(err) => {
+      env.toasts.error(format!("Couldn't read {name}: {err}"));
+    },
+  }
+}
+
+/// Starts uploading in-memory file bytes into `slot` (or the deck for videos and audio).
+pub fn upload_bytes(env: &mut Env<'_>, refs: &mut References, name: String, bytes: Vec<u8>, kind: RefKind, slot: ImageSlot) {
+  if kind == RefKind::Video && !Path::new(&name).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("mp4")) {
     env.toasts.error("Failed to upload video. Please upload an MP4 file.");
     return;
   }
   let mut item = RefMedia::uploading(kind, None);
   if kind == RefKind::Image {
     let key = format!("local://{}", item.id);
-    match std::fs::read(path) {
-      Ok(bytes) => {
-        env.cache.insert_bytes(&env.ctx, &key, Arc::from(bytes));
-        item.preview = Some(key);
-      },
-      Err(err) => {
-        env.toasts.error(format!("Couldn't read {}: {err}", file_name(path)));
-        return;
-      },
+    env.cache.insert_bytes(&env.ctx, &key, Arc::from(bytes.clone()));
+    item.preview = Some(key);
+  }
+  env.backend.upload_bytes(item.id, kind, name, bytes);
+  place(refs, item, slot);
+}
+
+/// Uploads either a picked path or browser byte payload.
+pub fn upload_input(env: &mut Env<'_>, refs: &mut References, input: PickedInput, kind: RefKind, slot: ImageSlot) {
+  match input {
+    PickedInput::Path(path) => {
+      #[cfg(not(target_arch = "wasm32"))]
+      upload_path(env, refs, &path, kind, slot);
+      #[cfg(target_arch = "wasm32")]
+      {
+        let _ = (refs, kind, slot);
+        env.toasts.error(format!("Cannot read local path {} directly in browser", file_name(&path)));
+      }
+    },
+    PickedInput::Bytes(name, bytes) => upload_bytes(env, refs, name, bytes, kind, slot),
+  }
+}
+
+/// A file picked via native dialog or browser async file input.
+#[derive(Clone, Debug)]
+pub enum PickedInput {
+  Path(PathBuf),
+  Bytes(String, Vec<u8>),
+}
+
+impl PickedInput {
+  pub fn name(&self) -> String {
+    match self {
+      PickedInput::Path(path) => file_name(path),
+      PickedInput::Bytes(name, _) => name.clone(),
     }
   }
-  env.backend.upload_file(item.id, kind, path.to_path_buf());
-  place(refs, item, slot);
+
+  pub fn ref_kind(&self) -> Option<RefKind> {
+    match self {
+      PickedInput::Path(path) => RefKind::from_path(path),
+      PickedInput::Bytes(name, _) => RefKind::from_name(name),
+    }
+  }
+}
+
+#[derive(Clone, Default)]
+struct PickInbox(Arc<Mutex<HashMap<Id, Vec<PickedInput>>>>);
+
+fn inbox(ctx: &egui::Context) -> PickInbox {
+  ctx.data_mut(|d| d.get_temp_mut_or_default::<PickInbox>(Id::new("fogbreak-hub-pick-inbox")).clone())
+}
+
+fn push_picked(ctx: &egui::Context, target: Id, items: Vec<PickedInput>) {
+  if items.is_empty() {
+    return;
+  }
+  let box_ref = inbox(ctx);
+  if let Ok(mut map) = box_ref.0.lock() {
+    map.entry(target).or_default().extend(items);
+  }
+  ctx.request_repaint();
+}
+
+/// Drains files previously requested for `target`.
+pub fn take_picked(ctx: &egui::Context, target: Id) -> Vec<PickedInput> {
+  let box_ref = inbox(ctx);
+  let mut guard = match box_ref.0.lock() {
+    Ok(g) => g,
+    Err(_) => return Vec::new(),
+  };
+  guard.remove(&target).unwrap_or_default()
+}
+
+/// Requests files via native dialog on desktop or async browser picker on `wasm32`.
+pub fn request_files(ctx: &egui::Context, target: Id, kinds: &[RefKind], multiple: bool) {
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    let items: Vec<PickedInput> = pick_files(kinds, multiple).into_iter().map(PickedInput::Path).collect();
+    push_picked(ctx, target, items);
+  }
+  #[cfg(target_arch = "wasm32")]
+  {
+    let mut dialog = rfd::AsyncFileDialog::new();
+    for (name, exts) in ref_filters(kinds) {
+      dialog = dialog.add_filter(name, exts);
+    }
+    let ctx = ctx.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+      let handles = if multiple {
+        dialog.pick_files().await.unwrap_or_default()
+      } else {
+        dialog.pick_file().await.into_iter().collect()
+      };
+      let mut items = Vec::with_capacity(handles.len());
+      for handle in handles {
+        let name = handle.file_name();
+        let bytes = handle.read().await;
+        items.push(PickedInput::Bytes(name, bytes));
+      }
+      push_picked(&ctx, target, items);
+    });
+  }
+}
+
+fn ref_filters(kinds: &[RefKind]) -> Vec<(&'static str, &'static [&'static str])> {
+  kinds
+    .iter()
+    .map(|kind| match kind {
+      RefKind::Image => ("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"][..]),
+      RefKind::Video => ("Videos (MP4)", &["mp4"][..]),
+      RefKind::Audio => ("Audio", &["mp3", "wav", "ogg", "flac", "aac", "m4a", "opus"][..]),
+    })
+    .collect()
 }
 
 /// Uploads a pasted image (PNG bytes) into `slot`.
@@ -332,14 +446,10 @@ pub fn attach_from_library(refs: &mut References, kind: RefKind, slot: ImageSlot
 }
 
 /// Asks the user for files of `kinds` (`multiple` for decks).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pick_files(kinds: &[RefKind], multiple: bool) -> Vec<PathBuf> {
   let mut dialog = rfd::FileDialog::new();
-  for kind in kinds {
-    let (name, exts): (&str, &[&str]) = match kind {
-      RefKind::Image => ("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"]),
-      RefKind::Video => ("Videos (MP4)", &["mp4"]),
-      RefKind::Audio => ("Audio", &["mp3", "wav", "ogg", "flac", "aac", "m4a", "opus"]),
-    };
+  for (name, exts) in ref_filters(kinds) {
     dialog = dialog.add_filter(name, exts);
   }
   if multiple {

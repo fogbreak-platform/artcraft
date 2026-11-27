@@ -1,11 +1,10 @@
-//! Generating through another provider (`ClassyModelSelector`'s "Select Provider"): Midjourney
-//! with the user's own account, or fal with their API key, instead of ArtCraft. Images only;
-//! video always runs on ArtCraft. Jobs are tracked here (they aren't ArtCraft jobs) and their
-//! results uploaded into the user's library, like the Tauri app.
+//! Generating through another provider (`Midjourney` with the user's account, or `FAL` with
+//! an API key) alongside the built-in workspace engine.
 
 pub mod accounts;
 pub mod jobs;
 pub mod submit;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod worker;
 
 use serde::{Deserialize, Serialize};
@@ -27,10 +26,10 @@ pub enum Provider {
 }
 
 impl Provider {
-  /// The picker's name (`getProviderDisplayName`).
+  /// The picker's display name.
   pub fn label(self) -> &'static str {
     match self {
-      Provider::Artcraft => "ArtCraft",
+      Provider::Artcraft => "Fogbreak Hub",
       Provider::Midjourney => "Midjourney",
       Provider::Fal => "FAL",
     }
@@ -39,15 +38,13 @@ impl Provider {
   /// The logo's key in the creator icons.
   pub fn icon(self) -> &'static str {
     match self {
-      Provider::Artcraft => "artcraft",
+      Provider::Artcraft => "fogbreak",
       Provider::Midjourney => "midjourney",
       Provider::Fal => "fal",
     }
   }
 
-  /// The providers `model_id` can run on, the default first (`ImageModels.ts`,
-  /// `buildModelsFromListing.ts`): fal for four ArtCraft models, Midjourney directly for
-  /// Midjourney's.
+  /// The providers `model_id` can run on, the default first.
   pub fn for_model(model_id: &str) -> &'static [Provider] {
     match model_id {
       "flux_1_dev" | "flux_1_schnell" | "nano_banana_2" | "nano_banana_pro" => &[Provider::Artcraft, Provider::Fal],
@@ -63,8 +60,8 @@ impl Provider {
     picked.filter(|p| allowed.contains(p)).unwrap_or(allowed[0])
   }
 
-  /// What the model can do on this provider (`imageModelForProvider`): direct Midjourney makes
-  /// four images, without references, resolution or quality choices.
+  /// What the model can do on this provider: direct Midjourney makes four images without
+  /// references, resolution or quality choices.
   pub fn adapt(self, model: &ModelInfo) -> ModelInfo {
     let mut m = model.clone();
     if self == Provider::Midjourney && is_midjourney(&model.id) {

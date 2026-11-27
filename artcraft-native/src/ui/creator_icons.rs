@@ -1,5 +1,5 @@
-//! Model makers' logos (the Tauri app's `/resources/images/services` SVGs), rasterized once into
-//! white-on-transparent textures so they can be tinted like the webapp's `icon-auto-contrast`.
+//! Model makers' logos rasterized once into white-on-transparent textures so they can be
+//! tinted cleanly in both dark and light modes.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -8,6 +8,9 @@ use egui::{ColorImage, TextureHandle, TextureOptions};
 
 /// Rasterized side, in pixels (crisp up to ~32 pt at 2x).
 const RASTER_SIDE: u32 = 64;
+
+/// Clean geometric Fogbreak Tidal Strata mark used for built-in / workspace engines.
+const WORKSPACE_MARK_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="10" y="14" width="44" height="9" rx="4.5" fill="#fff"/><rect x="10" y="27.5" width="34" height="9" rx="4.5" fill="#fff"/><rect x="10" y="41" width="24" height="9" rx="4.5" fill="#fff"/></svg>"##;
 
 macro_rules! service_svg {
   ($name:literal) => {
@@ -19,7 +22,7 @@ macro_rules! service_svg {
 fn svg_for_creator(creator: &str) -> &'static [u8] {
   match creator {
     "alibaba" => service_svg!("alibaba"),
-    "artcraft" => service_svg!("artcraft"),
+    "artcraft" | "fogbreak" | "fogbreak-hub" => WORKSPACE_MARK_SVG,
     "black_forest_labs" | "blackforestlabs" | "bfl" => service_svg!("blackforestlabs"),
     "bytedance" => service_svg!("bytedance"),
     "fal" => service_svg!("fal"),

@@ -1,5 +1,5 @@
-//! Window chrome for the undecorated window: dragging and maximizing from the title bar, the
-//! Windows-style caption buttons, and resizing from the edges.
+//! Window chrome for desktop undecorated windows: dragging and maximizing from the title bar,
+//! caption buttons, and resizing from the edges. Disabled cleanly on `wasm32`.
 
 use egui::{Color32, Rect, Response, Sense, Stroke, Ui, vec2};
 
@@ -12,14 +12,14 @@ const BUTTON_WIDTH: f32 = 46.0;
 /// The close button's hover red (Windows').
 const CLOSE_RED: Color32 = Color32::from_rgb(0xc4, 0x2b, 0x1c);
 
-/// Whether this platform draws its own title bar buttons (macOS keeps the traffic lights).
+/// Whether this platform draws its own title bar buttons (macOS keeps traffic lights; web needs none).
 pub fn custom_caption_buttons() -> bool {
-  !cfg!(target_os = "macos")
+  !cfg!(target_os = "macos") && !cfg!(target_arch = "wasm32")
 }
 
 /// Space to leave at the title bar's left for macOS's traffic lights.
 pub fn leading_inset() -> f32 {
-  if cfg!(target_os = "macos") {
+  if cfg!(target_os = "macos") && !cfg!(target_arch = "wasm32") {
     76.0
   } else {
     0.0
@@ -29,6 +29,9 @@ pub fn leading_inset() -> f32 {
 /// Dragging the title bar's empty space moves the window; double-clicking maximizes or restores.
 /// Call before drawing the title bar's controls so they stay on top.
 pub fn title_bar_drag(ui: &mut Ui) {
+  if cfg!(target_arch = "wasm32") {
+    return;
+  }
   let r = ui.max_rect();
   let rect = Rect::from_min_max(r.min + vec2(RESIZE_EDGE, RESIZE_EDGE), r.max - vec2(RESIZE_EDGE, 0.0));
   let resp = ui.interact(rect, ui.id().with("title-bar-drag"), Sense::click_and_drag());
@@ -52,6 +55,9 @@ enum Caption {
 /// Minimize, maximize (or restore) and close, `height` tall, for a right-to-left layout so close
 /// ends up at the right edge.
 pub fn caption_buttons(ui: &mut Ui, height: f32) {
+  if !custom_caption_buttons() {
+    return;
+  }
   let ctx = ui.ctx().clone();
   let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
   if caption_button(ui, Caption::Close, height).clicked() {
@@ -74,8 +80,8 @@ fn caption_button(ui: &mut Ui, button: Caption, height: f32) -> Response {
   let resp = ui.interact(hit, ui.id().with(("caption", button as u8)), Sense::click());
   let (fill, ink) = match (button, resp.hovered()) {
     (Caption::Close, true) => (CLOSE_RED, Color32::WHITE),
-    (_, true) => (theme::WASH_HOVER, theme::INK_STRONG),
-    (_, false) => (Color32::TRANSPARENT, theme::MUTED),
+    (_, true) => (theme::wash_hover(), theme::ink_strong()),
+    (_, false) => (Color32::TRANSPARENT, theme::muted()),
   };
   let p = ui.painter();
   p.rect_filled(rect, 0.0, fill);
@@ -114,8 +120,11 @@ fn caption_button(ui: &mut Ui, button: Caption, height: f32) -> Response {
 pub fn window_edges(ctx: &egui::Context) {
   use egui::CursorIcon as C;
   use egui::viewport::ResizeDirection as D;
+  if !custom_caption_buttons() {
+    return;
+  }
   let (maximized, fullscreen) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
-  if maximized || fullscreen || !custom_caption_buttons() {
+  if maximized || fullscreen {
     return;
   }
   let r = ctx.content_rect();

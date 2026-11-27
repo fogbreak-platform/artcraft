@@ -126,7 +126,7 @@ pub fn show(ui: &mut Ui, view: &FeedView<'_>, cache: &mut MediaCache, ratios: &m
     if view.has_more {
       let spinner = Rect::from_center_size(origin + vec2(width / 2.0, total + 32.0), vec2(24.0, 24.0));
       if view.loading {
-        icons::paint_spinner(ui, spinner, theme::MUTED);
+        icons::paint_spinner(ui, spinner, theme::muted());
       }
       if !view.loading && viewport.max.y + LOAD_MORE_MARGIN >= total {
         actions.push(FeedAction::LoadMore);
@@ -207,16 +207,16 @@ fn failed_card(ui: &mut Ui, id: Id, rect: Rect, job: &FailedJob, cache: &mut Med
   }
   let c = rect.center() - vec2(0.0, 20.0);
   let p = ui.painter();
-  icons::paint(p, Rect::from_center_size(c - vec2(0.0, 18.0), vec2(24.0, 24.0)), Icon::AlertCircle, theme::BAD);
-  p.text(c + vec2(0.0, 6.0), Align2::CENTER_CENTER, &job.reason, FontId::new(12.0, theme::medium()), theme::BAD);
+  icons::paint(p, Rect::from_center_size(c - vec2(0.0, 18.0), vec2(24.0, 24.0)), Icon::AlertCircle, theme::bad());
+  p.text(c + vec2(0.0, 6.0), Align2::CENTER_CENTER, &job.reason, FontId::new(12.0, theme::medium()), theme::bad());
   if let Some(msg) = job.message.as_deref().filter(|m| *m != job.reason) {
-    let galley = clamp_lines(ui, msg, 10.0, theme::fade(theme::BAD, 0.6), rect.width() - 32.0, 3);
+    let galley = clamp_lines(ui, msg, 10.0, theme::fade(theme::bad(), 0.6), rect.width() - 32.0, 3);
     ui.painter().galley(pos2(rect.center().x - galley.size().x / 2.0, c.y + 16.0), galley, Color32::WHITE);
   }
   let button = Rect::from_center_size(c + vec2(0.0, 62.0), vec2(84.0, 28.0));
   let resp = ui.interact(button, id.with(("dismiss", &job.job_token)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
   let p = ui.painter();
-  p.rect_filled(button, theme::RADIUS, if resp.hovered() { theme::WASH_HOVER } else { theme::WASH });
+  p.rect_filled(button, theme::RADIUS, if resp.hovered() { theme::wash_hover() } else { theme::wash() });
   let ink = if resp.hovered() { theme::fade(Color32::WHITE, 0.7) } else { theme::fade(Color32::WHITE, 0.5) };
   icons::paint(p, Rect::from_center_size(button.left_center() + vec2(18.0, 0.0), vec2(12.0, 12.0)), Icon::X, ink);
   p.text(button.left_center() + vec2(30.0, 0.0), Align2::LEFT_CENTER, "Dismiss", FontId::new(12.0, FontFamily::Proportional), ink);
@@ -243,11 +243,11 @@ fn item_card(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cach
   }
   let selected = view.selected.contains(&item.token);
   let ring = if selected {
-    Some(Stroke::new(2.0, theme::ACCENT_400))
+    Some(Stroke::new(2.0, theme::accent_400()))
   } else if hovered {
-    Some(Stroke::new(2.0, theme::fade(theme::ACCENT_400, 0.6)))
+    Some(Stroke::new(2.0, theme::fade(theme::accent_400(), 0.6)))
   } else if view.last_viewed == Some(item.token.as_str()) {
-    Some(Stroke::new(2.0, theme::fade(theme::ACCENT_400, 0.5)))
+    Some(Stroke::new(2.0, theme::fade(theme::accent_400(), 0.5)))
   } else {
     None
   };
@@ -256,7 +256,7 @@ fn item_card(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cach
   }
   if view.selecting {
     let chip = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(20.0, 20.0));
-    let (fill, border) = if selected { (theme::ACCENT_400, theme::ACCENT_400) } else { (Color32::from_black_alpha(102), theme::fade(Color32::WHITE, 0.6)) };
+    let (fill, border) = if selected { (theme::accent_400(), theme::accent_400()) } else { (Color32::from_black_alpha(102), theme::fade(Color32::WHITE, 0.6)) };
     ui.painter().rect(chip, theme::RADIUS, fill, Stroke::new(1.0, border), egui::StrokeKind::Inside);
     if selected {
       icons::paint(ui.painter(), chip.shrink(4.0), Icon::Check, Color32::WHITE);
@@ -299,7 +299,7 @@ fn item_card(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cach
 
 /// An image or video card's face: the thumbnail (or animated preview) and a video's play badge.
 fn visual_face(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cache: &mut MediaCache, ratios: &mut RatioCache) {
-  ui.painter().rect_filled(rect, theme::RADIUS, theme::fade(theme::CONTROLS, 0.4));
+  ui.painter().rect_filled(rect, theme::RADIUS, theme::fade(theme::controls(), 0.4));
   // Videos play their animated preview when previews are on (the still shows while it loads).
   let animated = item.animated.as_deref().filter(|_| view.autoplay && item.kind == MediaKind::Video).map(|u| cache.get_animated(ui.ctx(), u));
   let lookup = match animated {
@@ -315,7 +315,7 @@ fn visual_face(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, ca
       egui::Image::new(&t).uv(cover_uv_for(size, rect.size())).corner_radius(theme::RADIUS).paint_at(ui, rect);
     },
     Some(Lookup::Loading) => shimmer(ui, rect),
-    _ => icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(28.0, 28.0)), kind_icon(item.kind), theme::FAINT),
+    _ => icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(28.0, 28.0)), kind_icon(item.kind), theme::faint()),
   }
   if item.kind == MediaKind::Video && !(view.autoplay && item.animated.is_some()) {
     let badge = Rect::from_center_size(rect.center(), vec2(40.0, 40.0));
@@ -328,7 +328,7 @@ fn visual_face(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, ca
 /// and the waveform player along the bottom.
 fn audio_face(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, audio: &mut AudioPlayer) {
   let mut mesh = Mesh::default();
-  let (top, bottom) = (theme::fade(theme::ACCENT, 0.14), theme::fade(theme::CONTROLS, 0.6));
+  let (top, bottom) = (theme::fade(theme::accent(), 0.14), theme::fade(theme::controls(), 0.6));
   mesh.colored_vertex(rect.left_top(), top);
   mesh.colored_vertex(rect.right_top(), top);
   mesh.colored_vertex(rect.right_bottom(), bottom);
@@ -387,39 +387,39 @@ fn pending_row(ui: &mut Ui, rect: Rect, job: &PendingJob, now: i64, names: &dyn 
   let x = thumb.right() + 16.0;
   let w = rect.right() - x;
   let prompt = if job.prompt.is_empty() { "Generating\u{2026}" } else { job.prompt.as_str() };
-  let galley = clamp_lines(ui, prompt, 14.0, theme::INK, w, 2);
+  let galley = clamp_lines(ui, prompt, 14.0, theme::ink(), w, 2);
   let gh = galley.size().y;
-  ui.painter().galley(pos2(x, thumb.top()), galley, theme::INK);
+  ui.painter().galley(pos2(x, thumb.top()), galley, theme::ink());
   let meta_y = thumb.top() + gh + 14.0;
-  let mx = model_chip(ui, pos2(x, meta_y), job.model_id.as_deref().unwrap_or_default(), names, 12.0, theme::MUTED);
+  let mx = model_chip(ui, pos2(x, meta_y), job.model_id.as_deref().unwrap_or_default(), names, 12.0, theme::muted());
   if job.batch_count > 1 {
-    ui.painter().text(pos2(mx + 8.0, meta_y), Align2::LEFT_CENTER, format!("\u{b7} {} {}", job.batch_count, job.kind.plural()), FontId::new(12.0, FontFamily::Proportional), theme::MUTED);
+    ui.painter().text(pos2(mx + 8.0, meta_y), Align2::LEFT_CENTER, format!("\u{b7} {} {}", job.batch_count, job.kind.plural()), FontId::new(12.0, FontFamily::Proportional), theme::muted());
   }
   let bar = Rect::from_min_size(pos2(x, meta_y + 16.0), vec2(w.min(320.0), 4.0));
   widgets::progress_bar(ui.painter(), bar, progress as f32 / 100.0);
-  ui.painter().text(pos2(bar.right() + 10.0, bar.center().y), Align2::LEFT_CENTER, format!("{progress}% \u{b7} {label}"), FontId::new(11.0, FontFamily::Monospace), theme::FAINT);
+  ui.painter().text(pos2(bar.right() + 10.0, bar.center().y), Align2::LEFT_CENTER, format!("{progress}% \u{b7} {label}"), FontId::new(11.0, FontFamily::Monospace), theme::faint());
   row_divider(ui, rect);
 }
 
 fn failed_row(ui: &mut Ui, id: Id, rect: Rect, job: &FailedJob, names: &dyn ModelNames, actions: &mut Vec<FeedAction>) {
   let thumb = Rect::from_min_size(rect.min + vec2(0.0, 12.0), vec2(LIST_THUMB, LIST_THUMB));
   ui.painter().rect_filled(thumb, theme::RADIUS, Color32::from_rgba_unmultiplied(239, 68, 68, 26));
-  icons::paint(ui.painter(), Rect::from_center_size(thumb.center(), vec2(24.0, 24.0)), Icon::AlertCircle, theme::BAD);
+  icons::paint(ui.painter(), Rect::from_center_size(thumb.center(), vec2(24.0, 24.0)), Icon::AlertCircle, theme::bad());
   let x = thumb.right() + 16.0;
   let w = rect.right() - x - 100.0;
-  let galley = clamp_lines(ui, &job.prompt, 14.0, theme::INK, w, 2);
+  let galley = clamp_lines(ui, &job.prompt, 14.0, theme::ink(), w, 2);
   let gh = galley.size().y;
-  ui.painter().galley(pos2(x, thumb.top()), galley, theme::INK);
-  ui.painter().text(pos2(x, thumb.top() + gh + 14.0), Align2::LEFT_CENTER, &job.reason, FontId::new(12.0, theme::medium()), theme::BAD);
+  ui.painter().galley(pos2(x, thumb.top()), galley, theme::ink());
+  ui.painter().text(pos2(x, thumb.top() + gh + 14.0), Align2::LEFT_CENTER, &job.reason, FontId::new(12.0, theme::medium()), theme::bad());
   if let Some(msg) = job.message.as_deref().filter(|m| *m != job.reason) {
-    let g = clamp_lines(ui, msg, 11.0, theme::fade(theme::BAD, 0.6), w, 2);
+    let g = clamp_lines(ui, msg, 11.0, theme::fade(theme::bad(), 0.6), w, 2);
     ui.painter().galley(pos2(x, thumb.top() + gh + 24.0), g, Color32::WHITE);
   }
-  model_chip(ui, pos2(x, thumb.bottom() - 8.0), job.model_id.as_deref().unwrap_or_default(), names, 12.0, theme::FAINT);
+  model_chip(ui, pos2(x, thumb.bottom() - 8.0), job.model_id.as_deref().unwrap_or_default(), names, 12.0, theme::faint());
   let button = Rect::from_min_size(pos2(rect.right() - 92.0, thumb.top()), vec2(92.0, 28.0));
   let resp = ui.interact(button, id.with(("dismiss-row", &job.job_token)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-  ui.painter().rect_filled(button, theme::RADIUS, if resp.hovered() { theme::WASH_HOVER } else { theme::WASH });
-  ui.painter().text(button.center(), Align2::CENTER_CENTER, "Dismiss", FontId::new(12.0, FontFamily::Proportional), theme::MUTED);
+  ui.painter().rect_filled(button, theme::RADIUS, if resp.hovered() { theme::wash_hover() } else { theme::wash() });
+  ui.painter().text(button.center(), Align2::CENTER_CENTER, "Dismiss", FontId::new(12.0, FontFamily::Proportional), theme::muted());
   if resp.clicked() {
     actions.push(FeedAction::DismissFailed(job.job_token.clone()));
   }
@@ -434,7 +434,7 @@ fn item_row(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cache
     ui.painter().rect_filled(rect.expand2(vec2(8.0, 0.0)), 0.0, Color32::from_white_alpha(6));
   }
   let thumb = Rect::from_min_size(rect.min + vec2(0.0, 12.0), vec2(LIST_THUMB, LIST_THUMB));
-  ui.painter().rect_filled(thumb, theme::RADIUS, theme::fade(theme::CONTROLS, 0.4));
+  ui.painter().rect_filled(thumb, theme::RADIUS, theme::fade(theme::controls(), 0.4));
   let is_audio = item.kind == MediaKind::Audio;
   if is_audio {
     waveform::music_tile(ui, thumb, false);
@@ -442,7 +442,7 @@ fn item_row(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cache
     egui::Image::new(&t).uv(crate::prompt_box::deck::cover_uv(t.size_vec2())).corner_radius(theme::RADIUS).paint_at(ui, thumb);
   }
   if view.selected.contains(&item.token) {
-    ui.painter().rect_stroke(thumb, theme::RADIUS, Stroke::new(2.0, theme::ACCENT_400), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(thumb, theme::RADIUS, Stroke::new(2.0, theme::accent_400()), egui::StrokeKind::Inside);
   }
   let x = thumb.right() + 16.0;
   let w = rect.right() - x - 140.0;
@@ -450,16 +450,16 @@ fn item_row(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cache
   match prompt {
     Some(text) => {
       // Audio keeps room for its player under the text.
-      let g = clamp_lines(ui, text, 14.0, theme::INK, w, if is_audio { 2 } else { 3 });
-      ui.painter().galley(pos2(x, thumb.top()), g, theme::INK);
+      let g = clamp_lines(ui, text, 14.0, theme::ink(), w, if is_audio { 2 } else { 3 });
+      ui.painter().galley(pos2(x, thumb.top()), g, theme::ink());
     },
     None if item.prompt_token.is_some() => {
       for (i, frac) in [1.0, 0.7].iter().enumerate() {
-        ui.painter().rect_filled(Rect::from_min_size(pos2(x, thumb.top() + 4.0 + i as f32 * 20.0), vec2(w * frac, 12.0)), CornerRadius::same(2), theme::WASH);
+        ui.painter().rect_filled(Rect::from_min_size(pos2(x, thumb.top() + 4.0 + i as f32 * 20.0), vec2(w * frac, 12.0)), CornerRadius::same(2), theme::wash());
       }
     },
     None => {
-      ui.painter().text(pos2(x, thumb.top() + 8.0), Align2::LEFT_CENTER, fallback_title(item), FontId::new(14.0, FontFamily::Proportional), theme::MUTED);
+      ui.painter().text(pos2(x, thumb.top() + 8.0), Align2::LEFT_CENTER, fallback_title(item), FontId::new(14.0, FontFamily::Proportional), theme::muted());
     },
   }
   if is_audio {
@@ -469,11 +469,11 @@ fn item_row(ui: &mut Ui, view: &FeedView<'_>, rect: Rect, item: &FeedItem, cache
   let meta_y = thumb.bottom() - 10.0;
   let mut mx = x;
   if let Some(model) = item.model_id.as_deref() {
-    mx = model_chip(ui, pos2(x, meta_y), model, names, 12.0, theme::MUTED);
-    ui.painter().text(pos2(mx + 6.0, meta_y), Align2::LEFT_CENTER, format!("\u{b7} {}", item.kind.label()), FontId::new(12.0, FontFamily::Proportional), theme::MUTED);
+    mx = model_chip(ui, pos2(x, meta_y), model, names, 12.0, theme::muted());
+    ui.painter().text(pos2(mx + 6.0, meta_y), Align2::LEFT_CENTER, format!("\u{b7} {}", item.kind.label()), FontId::new(12.0, FontFamily::Proportional), theme::muted());
   }
   let _ = mx;
-  ui.painter().text(pos2(rect.right(), thumb.top() + 8.0), Align2::RIGHT_CENTER, time_ago(item.created_at, now), FontId::new(11.0, FontFamily::Proportional), theme::FAINT);
+  ui.painter().text(pos2(rect.right(), thumb.top() + 8.0), Align2::RIGHT_CENTER, time_ago(item.created_at, now), FontId::new(11.0, FontFamily::Proportional), theme::faint());
   let mut action_clicked = false;
   if hovered && !view.selecting {
     let buttons = item_actions(view, item, prompt);

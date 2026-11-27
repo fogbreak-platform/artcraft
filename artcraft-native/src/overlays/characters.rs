@@ -46,6 +46,11 @@ pub enum CharactersAction {
     ref_id: u64,
     path: PathBuf,
   },
+  UploadBytes {
+    ref_id: u64,
+    name: String,
+    bytes: Vec<u8>,
+  },
   Create {
     image_token: String,
     name: String,
@@ -105,7 +110,7 @@ impl CharactersModal {
       let dismissed = widgets::modal(ctx, Id::new("character-delete"), 420.0, |ui| {
         ui.label(widgets::heading("Delete character?", 20.0));
         ui.add_space(8.0);
-        ui.label(egui::RichText::new(format!("\u{201c}{name}\u{201d} will be removed from your characters.")).color(theme::MUTED));
+        ui.label(egui::RichText::new(format!("\u{201c}{name}\u{201d} will be removed from your characters.")).color(theme::muted()));
         ui.add_space(16.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
           if widgets::button(ui, None, "Delete", widgets::Kind::Danger, 0.0, theme::CONTROL_H).clicked() {
@@ -155,10 +160,10 @@ impl CharactersModal {
       let create = cell(0);
       let resp = ui.interact(create, Id::new("character-create"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
       resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Create New"));
-      ui.painter().rect_filled(create, theme::RADIUS, theme::fade(theme::CONTROLS, if resp.hovered() { 0.7 } else { 0.4 }));
-      icons::dashed_rect(ui.painter(), create.shrink(1.0), Stroke::new(1.5, theme::LINE_DASHED), 5.0, 4.0);
-      icons::paint(ui.painter(), Rect::from_center_size(create.center() - vec2(0.0, 10.0), vec2(22.0, 22.0)), Icon::Plus, theme::INK);
-      ui.painter().text(create.center() + vec2(0.0, 16.0), Align2::CENTER_CENTER, "Create New", FontId::new(13.0, theme::medium()), theme::INK);
+      ui.painter().rect_filled(create, theme::RADIUS, theme::fade(theme::controls(), if resp.hovered() { 0.7 } else { 0.4 }));
+      icons::dashed_rect(ui.painter(), create.shrink(1.0), Stroke::new(1.5, theme::line_dashed()), 5.0, 4.0);
+      icons::paint(ui.painter(), Rect::from_center_size(create.center() - vec2(0.0, 10.0), vec2(22.0, 22.0)), Icon::Plus, theme::ink());
+      ui.painter().text(create.center() + vec2(0.0, 16.0), Align2::CENTER_CENTER, "Create New", FontId::new(13.0, theme::medium()), theme::ink());
       if resp.clicked() {
         self.name.clear();
         self.description.clear();
@@ -167,8 +172,8 @@ impl CharactersModal {
       }
       for (i, name) in pending.iter().enumerate() {
         let r = cell(1 + i);
-        ui.painter().rect_filled(r, theme::RADIUS, theme::WASH);
-        icons::paint_spinner(ui, Rect::from_center_size(r.center(), vec2(24.0, 24.0)), theme::MUTED);
+        ui.painter().rect_filled(r, theme::RADIUS, theme::wash());
+        icons::paint_spinner(ui, Rect::from_center_size(r.center(), vec2(24.0, 24.0)), theme::muted());
         caption(ui, r, name, "Creating...");
       }
       for (i, c) in characters.iter().enumerate() {
@@ -177,7 +182,7 @@ impl CharactersModal {
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &c.name));
         thumbnail(ui, r, c.avatar_url().as_deref(), cache);
         if resp.hovered() {
-          ui.painter().rect_stroke(r, theme::RADIUS, Stroke::new(2.0, theme::fade(theme::ACCENT_400, 0.7)), egui::StrokeKind::Inside);
+          ui.painter().rect_stroke(r, theme::RADIUS, Stroke::new(2.0, theme::fade(theme::accent_400(), 0.7)), egui::StrokeKind::Inside);
         }
         caption(ui, r, &c.name, "");
         let mut clicked_tool = false;
@@ -211,7 +216,7 @@ impl CharactersModal {
         let (r, _) = ui.allocate_exact_size(vec2(240.0, 240.0), Sense::hover());
         thumbnail(ui, r, c.full_url().or_else(|| c.avatar_url()).as_deref(), cache);
         if let Some(url) = c.full_url() {
-          if ui.add(egui::Button::new(egui::RichText::new("View full size").size(12.0).color(theme::ACCENT_INK)).frame(false)).clicked() {
+          if ui.add(egui::Button::new(egui::RichText::new("View full size").size(12.0).color(theme::accent_ink())).frame(false)).clicked() {
             actions.push(CharactersAction::Preview(url));
           }
         }
@@ -241,7 +246,7 @@ impl CharactersModal {
     self.header(ui, "New Character", true, actions);
     ui.horizontal_top(|ui| {
       ui.vertical(|ui| {
-        widgets::hud(ui, "Reference", theme::FAINT);
+        widgets::hud(ui, "Reference", theme::faint());
         ui.add_space(6.0);
         let (r, resp) = ui.allocate_exact_size(vec2(240.0, 240.0), Sense::click());
         match &self.image {
@@ -253,25 +258,42 @@ impl CharactersModal {
             }
           },
           None => {
-            ui.painter().rect_filled(r, theme::RADIUS, theme::fade(theme::CONTROLS, if resp.hovered() { 0.7 } else { 0.4 }));
-            icons::dashed_rect(ui.painter(), r.shrink(1.0), Stroke::new(1.5, theme::LINE_DASHED), 5.0, 4.0);
-            icons::paint(ui.painter(), Rect::from_center_size(r.center() - vec2(0.0, 12.0), vec2(24.0, 24.0)), Icon::Upload, theme::INK);
-            ui.painter().text(r.center() + vec2(0.0, 18.0), Align2::CENTER_CENTER, "Upload reference image", FontId::new(13.0, theme::medium()), theme::INK);
+            ui.painter().rect_filled(r, theme::RADIUS, theme::fade(theme::controls(), if resp.hovered() { 0.7 } else { 0.4 }));
+            icons::dashed_rect(ui.painter(), r.shrink(1.0), Stroke::new(1.5, theme::line_dashed()), 5.0, 4.0);
+            icons::paint(ui.painter(), Rect::from_center_size(r.center() - vec2(0.0, 12.0), vec2(24.0, 24.0)), Icon::Upload, theme::ink());
+            ui.painter().text(r.center() + vec2(0.0, 18.0), Align2::CENTER_CENTER, "Upload reference image", FontId::new(13.0, theme::medium()), theme::ink());
           },
         }
+        let pick_id = Id::new("character-pick");
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-          if let Some(path) = crate::pages::common::pick_files(&[RefKind::Image], false).into_iter().next() {
-            match std::fs::read(&path) {
-              Ok(bytes) => {
-                let mut img = RefMedia::uploading(RefKind::Image, None);
-                let key = format!("local://{}", img.id);
-                cache.insert_bytes(ui.ctx(), &key, Arc::from(bytes));
-                img.preview = Some(key);
-                actions.push(CharactersAction::Upload { ref_id: img.id, path });
-                self.image = Some(img);
-              },
-              Err(err) => actions.push(CharactersAction::Toast(format!("Failed to upload {}: {err}", crate::pages::common::file_name(&path)))),
-            }
+          crate::pages::common::request_files(ui.ctx(), pick_id, &[RefKind::Image], false);
+        }
+        if let Some(picked) = crate::pages::common::take_picked(ui.ctx(), pick_id).into_iter().next() {
+          match picked {
+            crate::pages::common::PickedInput::Path(path) => {
+              #[cfg(not(target_arch = "wasm32"))]
+              match std::fs::read(&path) {
+                Ok(bytes) => {
+                  let mut img = RefMedia::uploading(RefKind::Image, None);
+                  let key = format!("local://{}", img.id);
+                  cache.insert_bytes(ui.ctx(), &key, Arc::from(bytes));
+                  img.preview = Some(key);
+                  actions.push(CharactersAction::Upload { ref_id: img.id, path });
+                  self.image = Some(img);
+                },
+                Err(err) => actions.push(CharactersAction::Toast(format!("Failed to upload {}: {err}", crate::pages::common::file_name(&path)))),
+              }
+              #[cfg(target_arch = "wasm32")]
+              let _ = path;
+            },
+            crate::pages::common::PickedInput::Bytes(name, bytes) => {
+              let mut img = RefMedia::uploading(RefKind::Image, None);
+              let key = format!("local://{}", img.id);
+              cache.insert_bytes(ui.ctx(), &key, Arc::from(bytes.clone()));
+              img.preview = Some(key);
+              actions.push(CharactersAction::UploadBytes { ref_id: img.id, name, bytes });
+              self.image = Some(img);
+            },
           }
         }
       });
@@ -303,42 +325,42 @@ impl CharactersModal {
 
 /// The name and description inputs shared by create and edit.
 fn fields(ui: &mut Ui, name: &mut String, description: &mut String) {
-  widgets::hud(ui, "Character name", theme::FAINT);
+  widgets::hud(ui, "Character name", theme::faint());
   ui.add_space(4.0);
-  input_frame(ui, |ui| ui.add(egui::TextEdit::singleline(name).frame(egui::Frame::NONE).desired_width(f32::INFINITY).hint_text(egui::RichText::new("Character name").color(theme::FAINT))));
+  input_frame(ui, |ui| ui.add(egui::TextEdit::singleline(name).frame(egui::Frame::NONE).desired_width(f32::INFINITY).hint_text(egui::RichText::new("Character name").color(theme::faint()))));
   ui.add_space(10.0);
-  widgets::hud(ui, "Description", theme::FAINT);
+  widgets::hud(ui, "Description", theme::faint());
   ui.add_space(4.0);
-  input_frame(ui, |ui| ui.add(egui::TextEdit::multiline(description).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(4).hint_text(egui::RichText::new("Description...").color(theme::FAINT))));
+  input_frame(ui, |ui| ui.add(egui::TextEdit::multiline(description).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(4).hint_text(egui::RichText::new("Description...").color(theme::faint()))));
 }
 
 fn input_frame(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> egui::Response) {
-  egui::Frame::new().fill(theme::SUNKEN).stroke(theme::hairline()).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| add(ui));
+  egui::Frame::new().fill(theme::sunken()).stroke(theme::hairline()).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| add(ui));
 }
 
 fn thumbnail(ui: &Ui, rect: Rect, url: Option<&str>, cache: &mut MediaCache) {
-  ui.painter().rect_filled(rect, theme::RADIUS, theme::WASH);
+  ui.painter().rect_filled(rect, theme::RADIUS, theme::wash());
   match url.map(|u| cache.get(ui.ctx(), u)) {
     Some(Lookup::Ready(t)) => {
       egui::Image::new(&t).uv(cover_uv(t.size_vec2())).corner_radius(theme::RADIUS).paint_at(ui, rect);
     },
-    Some(Lookup::Loading) => icons::paint_spinner(ui, Rect::from_center_size(rect.center(), vec2(20.0, 20.0)), theme::FAINT),
-    _ => icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(28.0, 28.0)), Icon::User, theme::FAINT),
+    Some(Lookup::Loading) => icons::paint_spinner(ui, Rect::from_center_size(rect.center(), vec2(20.0, 20.0)), theme::faint()),
+    _ => icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(28.0, 28.0)), Icon::User, theme::faint()),
   }
 }
 
 /// The name under a tile (and a muted note after it).
 fn caption(ui: &Ui, tile: Rect, name: &str, note: &str) {
   let y = tile.bottom() + 15.0;
-  let galley = ui.painter().layout_no_wrap(name.to_owned(), FontId::new(13.0, theme::medium()), theme::INK);
+  let galley = ui.painter().layout_no_wrap(name.to_owned(), FontId::new(13.0, theme::medium()), theme::ink());
   let w = galley.size().x.min(tile.width());
-  ui.painter().with_clip_rect(Rect::from_min_size(pos2(tile.left(), y - 10.0), vec2(tile.width(), 20.0))).galley(pos2(tile.left(), y - galley.size().y / 2.0), galley, theme::INK);
+  ui.painter().with_clip_rect(Rect::from_min_size(pos2(tile.left(), y - 10.0), vec2(tile.width(), 20.0))).galley(pos2(tile.left(), y - galley.size().y / 2.0), galley, theme::ink());
   if !note.is_empty() {
-    ui.painter().text(pos2(tile.left() + w + 6.0, y), Align2::LEFT_CENTER, note, FontId::new(11.5, egui::FontFamily::Proportional), theme::MUTED);
+    ui.painter().text(pos2(tile.left() + w + 6.0, y), Align2::LEFT_CENTER, note, FontId::new(11.5, egui::FontFamily::Proportional), theme::muted());
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
   use super::*;
   use egui_kittest::Harness;

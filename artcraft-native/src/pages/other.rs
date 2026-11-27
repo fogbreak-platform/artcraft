@@ -12,18 +12,18 @@ use crate::theme;
 use crate::ui::icons::{self, Icon};
 use crate::ui::widgets;
 
-/// Home: what ArtCraft does and where to start. Returns a page to open.
+/// Home: what Fogbreak Hub does and where to start. Returns a page to open.
 pub fn home(ui: &mut Ui, signed_in: bool, requests: &mut Vec<AppRequest>) -> Option<Page> {
   let mut open = None;
   let area = ui.max_rect();
   let width = (area.width() - 64.0).min(960.0);
   let mut col = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(area.center().x - width / 2.0, area.top() + 56.0), vec2(width, area.height() - 56.0))));
   let ui = &mut col;
-  widgets::hud(ui, "01 / ArtCraft", theme::FAINT);
+  widgets::hud(ui, "01 / Fogbreak Hub", theme::faint());
   ui.add_space(10.0);
   ui.label(widgets::heading("Capable tools for artists.", 52.0));
   ui.add_space(10.0);
-  ui.label(egui::RichText::new("Generate images, videos and audio with the best models, steer them with references and keyframes, and keep everything in your library.").size(17.0).color(theme::MUTED));
+  ui.label(egui::RichText::new("Generate images, videos and audio with the best models, steer them with references and keyframes, and keep everything in your library.").size(17.0).color(theme::muted()));
   ui.add_space(28.0);
   ui.horizontal(|ui| {
     ui.spacing_mut().item_spacing.x = 16.0;
@@ -48,15 +48,15 @@ fn card(ui: &mut Ui, width: f32, icon: Icon, title: &str, text: &str) -> bool {
   let (rect, resp) = ui.allocate_exact_size(vec2(width, 180.0), Sense::click());
   let hovered = resp.hovered();
   let p = ui.painter();
-  p.rect(rect, 0.0, if hovered { Color32::from_rgba_unmultiplied(242, 241, 238, 8) } else { Color32::from_rgba_unmultiplied(242, 241, 238, 4) }, egui::Stroke::new(1.0, if hovered { theme::LINE_STRONG } else { theme::LINE }), egui::StrokeKind::Inside);
+  p.rect(rect, 0.0, if hovered { theme::wash_hover() } else { theme::wash() }, egui::Stroke::new(1.0, if hovered { theme::line_strong() } else { theme::line() }), egui::StrokeKind::Inside);
   widgets::corner_marks(p, rect);
-  icons::paint(p, Rect::from_min_size(rect.min + vec2(24.0, 24.0), vec2(26.0, 26.0)), icon, theme::INK);
+  icons::paint(p, Rect::from_min_size(rect.min + vec2(24.0, 24.0), vec2(26.0, 26.0)), icon, theme::ink());
   let body = Rect::from_min_max(pos2(rect.left() + 24.0, rect.top() + 76.0), pos2(rect.right() - 24.0, rect.bottom() - 16.0));
   let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(egui::Align::Min)));
   inner.label(widgets::heading(title, 26.0));
   inner.add_space(4.0);
-  inner.label(egui::RichText::new(text).size(14.0).color(theme::MUTED));
-  icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.right() - 28.0, rect.top() + 36.0), vec2(16.0, 16.0)), Icon::ChevronRight, if hovered { theme::INK } else { theme::FAINT });
+  inner.label(egui::RichText::new(text).size(14.0).color(theme::muted()));
+  icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.right() - 28.0, rect.top() + 36.0), vec2(16.0, 16.0)), Icon::ChevronRight, if hovered { theme::ink() } else { theme::faint() });
   resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
@@ -105,22 +105,22 @@ pub fn library(ui: &mut Ui, env: &mut Env<'_>, feed: &mut FeedStore) {
   }
 }
 
-/// A tool that hasn't come to the native app yet.
+/// A tool that isn't built into this workspace yet.
 pub fn coming_soon(ui: &mut Ui, page: Page) {
   let area = ui.max_rect();
-  placeholder(ui, area, page.label(), "This tool is coming to the native app. You can use it in the ArtCraft web app in the meantime.", Some(format!("{WEB_APP_URL}{}", page.web_path())));
+  placeholder(ui, area, page.label(), "This tool is coming to this workspace. You can open it in the Fogbreak web portal in the meantime.", Some(format!("{WEB_APP_URL}{}", page.web_path())));
 }
 
 /// The bordered, corner-marked splash used for empty and placeholder pages.
 fn placeholder(ui: &mut Ui, area: Rect, title: &str, text: &str, web_url: Option<String>) {
   let width = (area.width() - 64.0).min(768.0);
   let section = Rect::from_center_size(area.center(), vec2(width, if web_url.is_some() { 240.0 } else { 180.0 }));
-  ui.painter().rect(section, 0.0, Color32::from_rgba_unmultiplied(242, 241, 238, 4), egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(242, 241, 238, 51)), egui::StrokeKind::Inside);
+  ui.painter().rect(section, 0.0, theme::wash(), egui::Stroke::new(1.0, theme::line()), egui::StrokeKind::Inside);
   widgets::corner_marks(ui.painter(), section);
   let mut child = ui.new_child(egui::UiBuilder::new().max_rect(section.shrink2(vec2(40.0, 44.0))));
   child.label(widgets::heading(title, 44.0));
   child.add_space(10.0);
-  child.label(egui::RichText::new(text).size(15.0).color(theme::MUTED));
+  child.label(egui::RichText::new(text).size(15.0).color(theme::muted()));
   if let Some(url) = web_url {
     child.add_space(20.0);
     if widgets::button(&mut child, Some(Icon::ExternalLink), "Open in web app", widgets::Kind::Primary, 0.0, 40.0).clicked() {

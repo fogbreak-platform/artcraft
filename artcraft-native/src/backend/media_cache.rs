@@ -1,9 +1,5 @@
 //! Images shown in the UI: CDN thumbnails, animated video previews and local previews, as GPU
 //! textures.
-//!
-//! Downloads run on the tokio runtime (a few at a time) and decode off the UI thread; the UI
-//! uploads finished images in [`MediaCache::poll`]. Textures nobody has drawn for a while are
-//! dropped once the cache grows past its budget, so long feeds don't hold every image forever.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,13 +9,16 @@ use std::time::Duration;
 use craft_image_codecs::{ChannelLayout, DecodeOptions, Format, Image, SampleType};
 use egui::{ColorImage, TextureHandle, TextureOptions};
 use log::warn;
+
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::runtime::Handle;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::Semaphore;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
-/// How many images may download at once.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CONCURRENT_DOWNLOADS: usize = 6;
 /// Longest side of a decoded image; larger ones are downscaled before upload.
 const MAX_DECODED_SIDE: u32 = 2048;
@@ -33,8 +32,11 @@ const EVICT_AFTER_FRAMES: u64 = 600;
 const EVICT_ANIMATED_AFTER_FRAMES: u64 = 120;
 
 pub struct MediaCache {
+  #[cfg(not(target_arch = "wasm32"))]
   rt: Handle,
+  #[cfg(not(target_arch = "wasm32"))]
   http: reqwest::Client,
+  #[cfg(not(target_arch = "wasm32"))]
   limiter: Arc<Semaphore>,
   tx: Sender<Loaded>,
   rx: Receiver<Loaded>,
@@ -77,9 +79,16 @@ enum Decoded {
 }
 
 impl MediaCache {
+  #[cfg(not(target_arch = "wasm32"))]
   pub fn new(rt: Handle, http: reqwest::Client) -> Self {
     let (tx, rx) = channel();
     Self { rt, http, limiter: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)), tx, rx, entries: HashMap::new(), frame: 0 }
+  }
+
+  #[cfg(target_arch = "wasm32")]
+  pub fn new() -> Self {
+    let (tx, rx) = channel();
+    Self { tx, rx, entries: HashMap::new(), frame: 0 }
   }
 
   /// The texture for `url`, starting its download the first time it's asked for.
@@ -93,14 +102,21 @@ impl MediaCache {
     self.lookup(ctx, &format!("anim:{url}"), url, true)
   }
 
-  /// Decodes `bytes` off the UI thread and registers the result under `key`.
+  /// Decodes `bytes` off the UI thread (or asynchronously on wasm32) and registers under `key`.
   pub fn insert_bytes(&mut self, ctx: &egui::Context, key: &str, bytes: Arc<[u8]>) {
     if self.entries.contains_key(key) {
       return;
     }
     self.entries.insert(key.to_owned(), Entry::Loading { last_used: self.frame });
     let (tx, ctx, key) = (self.tx.clone(), ctx.clone(), key.to_owned());
+    #[cfg(not(target_arch = "wasm32"))]
     self.rt.spawn_blocking(move || {
+      let decoded = decode(&bytes).map(Decoded::Still);
+      let _ = tx.send(Loaded { key, decoded });
+      ctx.request_repaint();
+    });
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_futures::spawn_local(async move {
       let decoded = decode(&bytes).map(Decoded::Still);
       let _ = tx.send(Loaded { key, decoded });
       ctx.request_repaint();
@@ -111,7 +127,6 @@ impl MediaCache {
   pub fn poll(&mut self, ctx: &egui::Context) {
     self.frame += 1;
     while let Ok(Loaded { key, decoded }) = self.rx.try_recv() {
-      // Dropped while loading (evicted): don't resurrect it.
       let Some(entry) = self.entries.get_mut(&key) else {
         continue;
       };
@@ -168,6 +183,7 @@ impl MediaCache {
     }
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   fn spawn_download(&self, ctx: &egui::Context, key: String, url: String, animated: bool) {
     let (http, limiter, tx, ctx) = (self.http.clone(), self.limiter.clone(), self.tx.clone(), ctx.clone());
     self.rt.spawn(async move {
@@ -179,8 +195,31 @@ impl MediaCache {
       ctx.request_repaint();
     });
   }
+
+  #[cfg(target_arch = "wasm32")]
+  fn spawn_download(&self, ctx: &egui::Context, key: String, url: String, animated: bool) {
+    let (tx, ctx) = (self.tx.clone(), ctx.clone());
+    wasm_bindgen_futures::spawn_local(async move {
+      let decoded = match crate::backend::web_http::fetch_bytes(&url).await {
+        Ok(bytes) => {
+          if animated {
+            decode_frames(&bytes).map(Decoded::Frames).or_else(|| decode(&bytes).map(Decoded::Still))
+          } else {
+            decode(&bytes).map(Decoded::Still)
+          }
+        },
+        Err(err) => {
+          warn!("Image download failed for {url}: {err}");
+          None
+        },
+      };
+      let _ = tx.send(Loaded { key, decoded });
+      ctx.request_repaint();
+    });
+  }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn download(http: &reqwest::Client, url: &str, animated: bool) -> Option<Decoded> {
   let response = match http.get(url).send().await.and_then(|r| r.error_for_status()) {
     Ok(response) => response,
@@ -204,8 +243,6 @@ fn decode(bytes: &[u8]) -> Option<ColorImage> {
   image_to_color_image(image, MAX_DECODED_SIDE)
 }
 
-/// The frames of an animated GIF or WebP (subsampled to the budget), or `None` when it isn't
-/// animated.
 fn decode_frames(bytes: &[u8]) -> Option<Vec<(ColorImage, f32)>> {
   let opts = DecodeOptions::default();
   let frames = match craft_image_codecs::detect(bytes)? {
@@ -221,7 +258,6 @@ fn decode_frames(bytes: &[u8]) -> Option<Vec<(ColorImage, f32)>> {
   if frames.len() < 2 {
     return None;
   }
-  // Keep every n-th frame, folding the skipped frames' time into the kept one.
   let step = frames.len().div_ceil(ANIMATED_MAX_FRAMES);
   let mut out = Vec::with_capacity(frames.len() / step + 1);
   let mut iter = frames.into_iter();
@@ -233,7 +269,6 @@ fn decode_frames(bytes: &[u8]) -> Option<Vec<(ColorImage, f32)>> {
       count += 1;
     }
     let secs = delay_ms as f32 / 1000.0;
-    // Some encoders write 0 ms delays; browsers treat those as ~100 ms.
     let delay = if secs < 0.02 { 0.1 * count as f32 } else { secs };
     out.push((image_to_color_image(first.image, ANIMATED_SIDE)?, delay));
   }
@@ -251,8 +286,6 @@ fn image_to_color_image(mut image: Image, max_side: u32) -> Option<ColorImage> {
   Some(to_color_image(rgba))
 }
 
-/// Keep the original 16-bit sample precision while averaging each source rectangle.
-/// Wide sums also cover reductions whose 16-bit samples would overflow a U32 sum.
 fn thumbnail_u16(image: &Image, max_side: u32) -> Option<Image> {
   let (w, h) = image.dimensions();
   if w == 0 || h == 0 || max_side == 0 {
@@ -273,7 +306,6 @@ fn thumbnail_u16(image: &Image, max_side: u32) -> Option<Image> {
   let x_ratio = w as f32 / nw as f32;
   let y_ratio = h as f32 / nh as f32;
 
-  // Use the same floating-point box boundaries as the earlier thumbnail path.
   let source_span = |index: u32, input: u32, ratio: f32| {
     let offset = index as f32 * ratio;
     let start = (offset.ceil() as u32).min(input - 1);

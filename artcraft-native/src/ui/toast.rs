@@ -66,7 +66,7 @@ impl Toasts {
         let w = 16.0 + 24.0 + 12.0 + galley.size().x + 12.0 + 12.0 + 16.0;
         let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
         let p = ui.painter();
-        p.rect(rect, theme::RADIUS, theme::fade(theme::CONTROLS, 0.97), theme::hairline(), egui::StrokeKind::Inside);
+        p.rect(rect, theme::RADIUS, theme::fade(theme::controls(), 0.97), theme::hairline(), egui::StrokeKind::Inside);
         let badge = Rect::from_min_size(pos2(rect.left() + 16.0, rect.center().y - 12.0), vec2(24.0, 24.0));
         let (fill, icon) = match toast.kind {
           ToastKind::Success => (Color32::from_rgb(0x22, 0xc5, 0x5e), Icon::Check),

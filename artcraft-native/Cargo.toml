@@ -1,54 +1,95 @@
 [package]
 name = "artcraft_native"
-description = "ArtCraft desktop app in pure Rust: an egui UI over the ArtCraft API client (no Tauri, no webview)"
+description = "Fogbreak Hub creative workspace UI in pure Rust (egui) over the workspace API"
 version = "0.1.0"
 edition = "2021"
 publish = false
+
+[lib]
+name = "artcraft_native"
+path = "src/lib.rs"
 
 [[bin]]
 name = "artcraft-native"
 path = "src/main.rs"
 
 [dependencies]
-# Internal (Tauri-free) API crates shared with the Tauri app.
+# External shared across desktop and wasm32 browser builds.
+anyhow.workspace = true
+base64.workspace = true
+chrono.workspace = true
+craft-image-codecs.workspace = true
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "accesskit", "persistence", "links"] }
+egui = "0.36"
+egui_extras = { version = "0.36", default-features = false, features = ["image", "svg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+log.workspace = true
+resvg = "0.45"
+rfd = { version = "0.16", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Internal (Tauri-free) API crates used by the native desktop backend.
 artcraft_api_defs.workspace = true
 artcraft_client.workspace = true
 artcraft_router.workspace = true
 cookie_store_wrapper.workspace = true
+enums.workspace = true
 fal_client.workspace = true
 midjourney_client.workspace = true
 tokens.workspace = true
 
-# External
-anyhow.workspace = true
+# Desktop-only dependencies.
+arboard = { version = "3", default-features = false, features = ["image-data"] }
 cookie.workspace = true
-chrono.workspace = true
-craft-image-codecs.workspace = true
 directories = "6.0.0"
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "accesskit", "wayland", "x11", "persistence", "links"] }
-egui = "0.36"
-enums.workspace = true
-egui_extras = { version = "0.36", default-features = false, features = ["image", "svg"] }
+eframe = { version = "0.36", default-features = false, features = ["wayland", "x11"] }
 env_logger.workspace = true
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
-log.workspace = true
 open = "5"
 reqwest = { workspace = true, features = ["multipart"] }
-resvg = "0.45"
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
 rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
-serde.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "fs"] }
-url.workspace = true
-uuid = { workspace = true, features = ["v4"] }
-
-# Pasting images from the clipboard (egui's own clipboard support is text only).
-arboard = { version = "3", default-features = false, features = ["image-data"] }
-
-# The Midjourney sign-in window (its login cookies can only be captured inside a browser).
 wry = "0.55"
 
-[dev-dependencies]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+uuid = { workspace = true, features = ["v4", "js"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "AudioBuffer",
+  "AudioContext",
+  "BaseAudioContext",
+  "Blob",
+  "BlobPropertyBag",
+  "CssStyleDeclaration",
+  "Document",
+  "Element",
+  "Event",
+  "EventTarget",
+  "FormData",
+  "Headers",
+  "HtmlAnchorElement",
+  "HtmlAudioElement",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "HtmlMediaElement",
+  "Location",
+  "Request",
+  "RequestCredentials",
+  "RequestInit",
+  "Response",
+  "Storage",
+  "Url",
+  "Window",
+] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 egui_kittest = "0.36"

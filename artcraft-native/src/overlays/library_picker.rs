@@ -81,7 +81,7 @@ impl LibraryPicker {
       ui.horizontal(|ui| {
         ui.label(widgets::heading("Pick from library", 22.0));
         ui.add_space(8.0);
-        widgets::hud(ui, noun, theme::MUTED);
+        widgets::hud(ui, noun, theme::muted());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
           if widgets::ghost(ui, Icon::X, None, "Close", false).clicked() {
             actions.push(PickerAction::Close);
@@ -114,17 +114,17 @@ impl LibraryPicker {
           self.toggle(token);
         }
         if self.items.is_empty() && !self.loading && !self.has_more {
-          ui.painter().text(origin + vec2(w / 2.0, 80.0), Align2::CENTER_CENTER, format!("No {noun} in your library yet"), FontId::new(14.0, egui::FontFamily::Proportional), theme::MUTED);
+          ui.painter().text(origin + vec2(w / 2.0, 80.0), Align2::CENTER_CENTER, format!("No {noun} in your library yet"), FontId::new(14.0, egui::FontFamily::Proportional), theme::muted());
         }
         if self.loading {
-          icons::paint_spinner(ui, Rect::from_center_size(origin + vec2(w / 2.0, total + 24.0), vec2(24.0, 24.0)), theme::MUTED);
+          icons::paint_spinner(ui, Rect::from_center_size(origin + vec2(w / 2.0, total + 24.0), vec2(24.0, 24.0)), theme::muted());
         } else if self.has_more && viewport.max.y + 300.0 >= total {
           actions.push(PickerAction::LoadMore);
         }
       });
       ui.add_space(12.0);
       ui.horizontal(|ui| {
-        widgets::hud(ui, &format!("{}/{} selected", self.selected.len(), self.max), theme::MUTED);
+        widgets::hud(ui, &format!("{}/{} selected", self.selected.len(), self.max), theme::muted());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
           let any = !self.selected.is_empty();
           if ui.add_enabled_ui(any, |ui| widgets::button(ui, None, "Use selected", widgets::Kind::Primary, 0.0, theme::CONTROL_H)).inner.clicked() {
@@ -161,7 +161,7 @@ impl LibraryPicker {
 fn tile_ui(ui: &mut egui::Ui, rect: Rect, item: &MediaFile, kind: RefKind, attached: bool, order: Option<usize>, cache: &mut MediaCache) -> bool {
   let resp = ui.interact(rect, Id::new(("picker-tile", &item.token)), if attached { Sense::hover() } else { Sense::click() });
   let p = ui.painter();
-  p.rect_filled(rect, 0.0, theme::fade(theme::CONTROLS, 0.6));
+  p.rect_filled(rect, 0.0, theme::fade(theme::controls(), 0.6));
   match item.thumbnail(256).map(|u| cache.get(ui.ctx(), &u)) {
     Some(Lookup::Ready(t)) => {
       let image = egui::Image::new(&t).uv(cover_uv(t.size_vec2()));
@@ -174,7 +174,7 @@ fn tile_ui(ui: &mut egui::Ui, rect: Rect, item: &MediaFile, kind: RefKind, attac
         RefKind::Video => Icon::Video,
         RefKind::Audio => Icon::Music,
       };
-      icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(26.0, 26.0)), icon, theme::FAINT);
+      icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(26.0, 26.0)), icon, theme::faint());
     },
   }
   if let Some(ms) = item.maybe_duration_millis.filter(|_| kind != RefKind::Image) {
@@ -186,12 +186,12 @@ fn tile_ui(ui: &mut egui::Ui, rect: Rect, item: &MediaFile, kind: RefKind, attac
   if attached {
     p.text(rect.center(), Align2::CENTER_CENTER, "Attached", FontId::new(11.0, theme::semibold()), theme::fade(Color32::WHITE, 0.7));
   } else if let Some(i) = order {
-    p.rect_stroke(rect, 0.0, Stroke::new(2.0, theme::ACCENT_400), egui::StrokeKind::Inside);
+    p.rect_stroke(rect, 0.0, Stroke::new(2.0, theme::accent_400()), egui::StrokeKind::Inside);
     let chip = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(22.0, 22.0));
-    p.rect_filled(chip, theme::RADIUS, theme::ACCENT_400);
+    p.rect_filled(chip, theme::RADIUS, theme::accent_400());
     p.text(chip.center(), Align2::CENTER_CENTER, (i + 1).to_string(), FontId::new(11.0, theme::semibold()), Color32::WHITE);
   } else if resp.hovered() {
-    p.rect_stroke(rect, 0.0, Stroke::new(2.0, theme::fade(theme::ACCENT_400, 0.6)), egui::StrokeKind::Inside);
+    p.rect_stroke(rect, 0.0, Stroke::new(2.0, theme::fade(theme::accent_400(), 0.6)), egui::StrokeKind::Inside);
   }
   !attached && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
