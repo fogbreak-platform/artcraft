@@ -25,7 +25,7 @@ egui_extras = { version = "0.36", default-features = false, features = ["image",
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 log.workspace = true
 resvg = "0.45"
-rfd = { version = "0.16", default-features = false }
+rfd = "0.17"
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
@@ -50,7 +50,7 @@ eframe = { version = "0.36", default-features = false, features = ["wayland", "x
 env_logger.workspace = true
 open = "5"
 reqwest = { workspace = true, features = ["multipart"] }
-rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "fs"] }

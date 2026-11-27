@@ -15,7 +15,7 @@ pub const HEADER_HEIGHT: f32 = 48.0;
 pub const PANEL_GAP: i8 = 8;
 pub const PANEL_RADIUS: u8 = 8;
 const ROW_HEIGHT: f32 = 32.0;
-pub const GITHUB_URL: &str = "https://github.com/fogbreak-platform/artcraft";
+pub const GITHUB_URL: &str = "https://github.com/fogbreak-platform/fogbreak-hub";
 pub const WEB_APP_URL: &str = "https://fogbreak.io";
 
 /// Every page in the navigation.
