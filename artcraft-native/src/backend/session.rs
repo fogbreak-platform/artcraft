@@ -130,7 +130,7 @@ mod web {
 
   const STORAGE_KEY: &str = "fogbreak-hub.session";
   const HOST_STORAGE_KEY: &str = "fogbreak-hub.api_host";
-  const DEFAULT_API_HOST: &str = "https://api.storyteller.ai";
+  const DEFAULT_API_HOST: &str = "";
 
   fn storage() -> Option<web_sys::Storage> {
     web_sys::window().and_then(|w| w.local_storage().ok()).flatten()

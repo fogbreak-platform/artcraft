@@ -663,6 +663,12 @@ impl ArtcraftApp {
   }
 
   fn open_login(&mut self) {
+    #[cfg(target_arch = "wasm32")]
+    if !self.backend.has_hub_host() {
+      self.settings_open = true;
+      self.toasts.error("Configure a provider key in Settings or pass ?api_host= to generate.");
+      return;
+    }
     if self.login.is_none() {
       self.login = Some(LoginDialog::default());
     }

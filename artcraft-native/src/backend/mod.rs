@@ -982,6 +982,10 @@ mod web {
       Self { ctx, tx, rx, host, root, creds, device_login_cancel: Arc::new(AtomicBool::new(false)), accounts, jobs }
     }
 
+    pub fn has_hub_host(&self) -> bool {
+      !self.host.is_empty()
+    }
+
     pub fn data_root(&self) -> &Path {
       &self.root
     }
@@ -991,6 +995,10 @@ mod web {
     }
 
     pub fn refresh_session(&self) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::Session(None));
+        return;
+      }
       let (host, has_saved) = (self.host.clone(), self.has_creds());
       self.spawn(move |tx| async move {
         match fetch_json::<SessionInfo>("GET", &format!("{host}/v1/session"), None, true).await {
@@ -1013,11 +1021,18 @@ mod web {
     }
 
     pub fn refresh_credits(&self) {
+      if self.host.is_empty() {
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move { send_credits(&host, &tx).await });
     }
 
     pub fn login_with_password(&self, username_or_email: String, password: String) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::LoginFailed("Configure a Hub API host (?api_host=...) to connect an account.".to_owned()));
+        return;
+      }
       let (host, root, creds, ctx) = (self.host.clone(), self.root.clone(), self.creds.clone(), self.ctx.clone());
       self.spawn(move |tx| async move {
         let body = serde_json::json!({ "username_or_email": username_or_email, "password": password });
@@ -1040,6 +1055,10 @@ mod web {
     }
 
     pub fn login_with_browser(&self) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::LoginFailed("Configure a Hub API host (?api_host=...) to connect an account.".to_owned()));
+        return;
+      }
       self.device_login_cancel.store(false, Ordering::Relaxed);
       let (host, root, creds, cancel, ctx) = (self.host.clone(), self.root.clone(), self.creds.clone(), self.device_login_cancel.clone(), self.ctx.clone());
       self.spawn(move |tx| async move {
@@ -1093,11 +1112,15 @@ mod web {
     }
 
     pub fn logout(&self) {
-      let host = self.host.clone();
       if let Ok(mut c) = self.creds.write() {
         *c = None;
       }
       session::delete(&self.root);
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::Session(None));
+        return;
+      }
+      let host = self.host.clone();
       self.spawn(move |tx| async move {
         let empty = serde_json::json!({});
         if let Err((_, err)) = fetch_json::<Value>("POST", &format!("{host}/v1/logout"), Some(&empty), true).await {
@@ -1108,6 +1131,10 @@ mod web {
     }
 
     pub fn load_models(&self, modality: Modality) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::Models(modality, Ok(models::fallback_models(modality))));
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move {
         let mut last_err = String::new();
@@ -1134,6 +1161,10 @@ mod web {
     }
 
     pub fn estimate_cost(&self, modality: Modality, key: String, fields: Map<String, Value>) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::Cost { key, credits: None });
+        return;
+      }
       let host = self.host.clone();
       let body = Value::Object(fields);
       self.spawn(move |tx| async move {
@@ -1150,6 +1181,10 @@ mod web {
     }
 
     pub fn generate(&self, modality: Modality, mut fields: Map<String, Value>, meta: EnqueueMeta) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::EnqueueFailed { modality, message: "Configure a Hub API host (?api_host=...) or provider key in Settings to generate.".to_owned(), status: None });
+        return;
+      }
       let host = self.host.clone();
       fields.entry("idempotency_token").or_insert_with(|| Value::String(uuid::Uuid::new_v4().to_string()));
       let body = Value::Object(fields);
@@ -1195,6 +1230,10 @@ mod web {
           let _ = self.tx.send(Event::Cost { key, credits: Some(0) });
         },
         Provider::Fal => {
+          if self.host.is_empty() {
+            let _ = self.tx.send(Event::Cost { key, credits: None });
+            return;
+          }
           let host = self.host.clone();
           let body = fal_cost_body(&fields);
           self.spawn(move |tx| async move {
@@ -1220,6 +1259,10 @@ mod web {
     }
 
     pub fn upload_bytes(&self, ref_id: u64, kind: RefKind, name: String, bytes: Vec<u8>) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::Uploaded { ref_id, result: Err("Reference uploads require a connected Hub API host.".to_owned()) });
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move {
         let route = match kind {
@@ -1265,6 +1308,10 @@ mod web {
     }
 
     pub fn load_library(&self, key: String, username: String, classes: &'static str, page: u32) {
+      if self.host.is_empty() {
+        let _ = self.tx.send(Event::LibraryPage { key, page, items: Vec::new(), total_pages: 0 });
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move {
         let url = format!("{host}/v1/media_files/list/user/{username}?filter_media_classes={classes}&page_size={LIBRARY_PAGE_SIZE}&page_index={page}");
@@ -1282,6 +1329,9 @@ mod web {
     }
 
     pub fn load_batch(&self, job_token: String, batch_token: String) {
+      if self.host.is_empty() {
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move {
         match fetch_json::<BatchMedia>("GET", &format!("{host}/v1/media_files/batch_gen_redux/{batch_token}"), None, true).await {
@@ -1294,6 +1344,9 @@ mod web {
     }
 
     pub fn load_prompt(&self, prompt_token: String) {
+      if self.host.is_empty() {
+        return;
+      }
       let host = self.host.clone();
       self.spawn(move |tx| async move {
         match fetch_json::<PromptResponse>("GET", &format!("{host}/v1/prompts/{prompt_token}"), None, true).await {

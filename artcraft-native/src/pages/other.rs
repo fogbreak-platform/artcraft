@@ -13,7 +13,7 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::widgets;
 
 /// Home: what Fogbreak Hub does and where to start. Returns a page to open.
-pub fn home(ui: &mut Ui, signed_in: bool, requests: &mut Vec<AppRequest>) -> Option<Page> {
+pub fn home(ui: &mut Ui, _signed_in: bool, _requests: &mut Vec<AppRequest>) -> Option<Page> {
   let mut open = None;
   let area = ui.max_rect();
   let width = (area.width() - 64.0).min(960.0);
@@ -35,12 +35,6 @@ pub fn home(ui: &mut Ui, signed_in: bool, requests: &mut Vec<AppRequest>) -> Opt
       }
     }
   });
-  if !signed_in {
-    ui.add_space(24.0);
-    if widgets::button(ui, Some(Icon::LogIn), "Sign in to start", widgets::Kind::Primary, 0.0, 44.0).clicked() {
-      requests.push(AppRequest::SignIn);
-    }
-  }
   open
 }
 
@@ -64,7 +58,7 @@ fn card(ui: &mut Ui, width: f32, icon: Icon, title: &str, text: &str) -> bool {
 pub fn library(ui: &mut Ui, env: &mut Env<'_>, feed: &mut FeedStore) {
   let area = ui.max_rect();
   if !env.signed_in {
-    placeholder(ui, area, "Library", "Sign in to see everything you've generated.", None);
+    placeholder(ui, area, "Library", "Your generations will appear here.", None);
     return;
   }
   if !feed.library_started() {

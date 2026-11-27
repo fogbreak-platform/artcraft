@@ -179,8 +179,8 @@ pub fn titlebar(ui: &mut Ui, account: &Account<'_>, mark: &egui::TextureHandle) 
         }
       },
       None => {
-        if widgets::button(ui, None, "Sign in", widgets::Kind::Primary, 0.0, 28.0).clicked() {
-          action = Some(ShellAction::SignIn);
+        if widgets::button(ui, Some(Icon::Settings), "Settings", widgets::Kind::Secondary, 0.0, 28.0).clicked() {
+          action = Some(ShellAction::OpenSettings);
         }
       },
     }
@@ -225,8 +225,8 @@ pub fn sidebar(ui: &mut Ui, page: Page, account: &Account<'_>) -> Option<ShellAc
       }
     },
     None => {
-      if widgets::button(&mut foot, Some(Icon::LogIn), "Sign in", widgets::Kind::Primary, bottom.width(), 40.0).clicked() {
-        action = Some(ShellAction::SignIn);
+      if widgets::button(&mut foot, Some(Icon::Settings), "Settings", widgets::Kind::Secondary, bottom.width(), 40.0).clicked() {
+        action = Some(ShellAction::OpenSettings);
       }
     },
   }

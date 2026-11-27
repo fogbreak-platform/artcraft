@@ -214,10 +214,10 @@ pub fn selection_bar(ui: &Ui, area: Rect, bottom: f32, feed: &mut FeedStore, kin
 
 /// The splash: a bordered section with corner marks, the page title and a sign-in prompt for
 /// visitors (`CreateEmptyState`).
-fn empty_state(ui: &mut Ui, env: &mut Env<'_>, area: Rect, bottom_offset: f32, title: &str, subtitle: &str) {
+fn empty_state(ui: &mut Ui, _env: &mut Env<'_>, area: Rect, bottom_offset: f32, title: &str, subtitle: &str) {
   let usable = Rect::from_min_max(area.min, pos2(area.right(), area.bottom() - bottom_offset));
   let width = (usable.width() - 64.0).min(768.0);
-  let height = if env.signed_in { 190.0 } else { 250.0 };
+  let height = 190.0;
   let section = Rect::from_center_size(usable.center(), vec2(width, height));
   let p = ui.painter();
   p.rect(section, 0.0, Color32::from_rgba_unmultiplied(242, 241, 238, 4), egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(242, 241, 238, 51)), egui::StrokeKind::Inside);
@@ -226,12 +226,6 @@ fn empty_state(ui: &mut Ui, env: &mut Env<'_>, area: Rect, bottom_offset: f32, t
   child.label(widgets::heading(title, 48.0));
   child.add_space(12.0);
   child.label(egui::RichText::new(subtitle).size(16.0).color(theme::muted()));
-  if !env.signed_in {
-    child.add_space(24.0);
-    if widgets::button(&mut child, Some(crate::ui::icons::Icon::Sparkles), "Sign in to create", widgets::Kind::Primary, 0.0, 44.0).clicked() {
-      env.requests.push(AppRequest::SignIn);
-    }
-  }
 }
 
 /// The 192 px fade behind the floating prompt box (`h-48 from-ui-background`).

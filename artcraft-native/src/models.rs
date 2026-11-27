@@ -481,6 +481,49 @@ impl Catalog {
   }
 }
 
+/// Built-in curated catalog entries used in standalone browser mode when no Hub API host is configured.
+pub fn fallback_models(modality: crate::backend::Modality) -> Vec<ModelInfo> {
+  match modality {
+    crate::backend::Modality::Image => ["nano_banana_pro", "flux_1_dev", "gpt_image_1p5"]
+      .into_iter()
+      .map(|id| {
+        let mut m = base(id, MediaKind::Image, None, None);
+        m.aspect_ratios = vec!["auto", "square", "wide_sixteen_by_nine", "tall_nine_by_sixteen"].into_iter().map(str::to_owned).collect();
+        m.aspect_default = Some("auto".to_owned());
+        m.resolutions = vec!["one_k", "two_k"].into_iter().map(str::to_owned).collect();
+        m.resolution_default = Some("one_k".to_owned());
+        m.qualities = vec!["standard", "high"].into_iter().map(str::to_owned).collect();
+        m.quality_default = Some("standard".to_owned());
+        m.batch_sizes = vec![1, 2, 4];
+        m
+      })
+      .collect(),
+    crate::backend::Modality::Video => ["seedance_2p0", "veo_3", "kling_2p0"]
+      .into_iter()
+      .map(|id| {
+        let mut m = base(id, MediaKind::Video, None, None);
+        m.aspect_ratios = vec!["wide_sixteen_by_nine", "tall_nine_by_sixteen", "square"].into_iter().map(str::to_owned).collect();
+        m.aspect_default = Some("wide_sixteen_by_nine".to_owned());
+        m.resolutions = vec!["seven_twenty_p", "ten_eighty_p"].into_iter().map(str::to_owned).collect();
+        m.resolution_default = Some("seven_twenty_p".to_owned());
+        m.duration_options = vec![5, 10];
+        m.duration_default = Some(5);
+        m.sound_toggle = true;
+        m.batch_sizes = vec![1];
+        m
+      })
+      .collect(),
+    crate::backend::Modality::Audio => ["suno_music", "suno_remix", "suno_sounds"]
+      .into_iter()
+      .map(|id| {
+        let mut m = base(id, MediaKind::Audio, None, None);
+        m.audio = AudioCaps { style_prompt: true, instrumental: true, bpm: true, musical_key: true, requires_audio_ref: AUDIO_MODELS_REQUIRING_AUDIO_REF.contains(&id), ..Default::default() };
+        m
+      })
+      .collect(),
+  }
+}
+
 impl ModelNames for Catalog {
   fn display_name(&self, model_id: &str) -> String {
     self.find(model_id).map_or_else(|| display_name(model_id), |m| m.name.clone())

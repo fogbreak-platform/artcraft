@@ -31,7 +31,7 @@ impl LoginDialog {
     let mut action = None;
     let close = widgets::modal(ctx, Id::new("login"), 420.0, |ui| {
       ui.horizontal(|ui| {
-        ui.label(widgets::heading("Sign in to Fogbreak Hub", 24.0));
+        ui.label(widgets::heading("Connect Fogbreak Hub", 24.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
           if widgets::ghost(ui, Icon::X, None, "Close", false).clicked() {
             action = Some(LoginAction::Close);
@@ -39,7 +39,7 @@ impl LoginDialog {
         });
       });
       ui.add_space(4.0);
-      ui.label(egui::RichText::new("Use your Fogbreak Hub account to generate images, videos, and audio.").color(theme::muted()));
+      ui.label(egui::RichText::new("Connect a Hub API host (?api_host=...) to sync your remote library and credits.").color(theme::muted()));
       ui.add_space(16.0);
       let width = ui.available_width();
       match &self.device {
@@ -60,7 +60,7 @@ impl LoginDialog {
           });
         },
         None => {
-          if ui.add_enabled_ui(!self.busy, |ui| widgets::button(ui, Some(Icon::Globe), "Sign in with browser", widgets::Kind::Primary, width, 40.0)).inner.clicked() {
+          if ui.add_enabled_ui(!self.busy, |ui| widgets::button(ui, Some(Icon::Globe), "Connect with browser", widgets::Kind::Primary, width, 40.0)).inner.clicked() {
             action = Some(LoginAction::Browser);
           }
           ui.add_space(14.0);
@@ -76,7 +76,7 @@ impl LoginDialog {
           let submitted = (user_resp.lost_focus() || pass_resp.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
           ui.add_space(14.0);
           let ready = !self.username.trim().is_empty() && !self.password.is_empty() && !self.busy;
-          let clicked = ui.add_enabled_ui(ready, |ui| widgets::button(ui, if self.busy { None } else { Some(Icon::LogIn) }, if self.busy { "Signing in\u{2026}" } else { "Sign in" }, widgets::Kind::Secondary, width, 40.0)).inner.clicked();
+          let clicked = ui.add_enabled_ui(ready, |ui| widgets::button(ui, if self.busy { None } else { Some(Icon::LogIn) }, if self.busy { "Connecting\u{2026}" } else { "Connect" }, widgets::Kind::Secondary, width, 40.0)).inner.clicked();
           if ready && (clicked || submitted) {
             action = Some(LoginAction::Password);
           }
@@ -157,7 +157,7 @@ pub fn settings_dialog(ctx: &egui::Context, enter_to_generate: &mut bool, userna
         });
       },
       None => {
-        if widgets::button(ui, Some(Icon::LogIn), "Sign in", widgets::Kind::Primary, 0.0, theme::CONTROL_H).clicked() {
+        if widgets::button(ui, Some(Icon::LogIn), "Connect Hub", widgets::Kind::Primary, 0.0, theme::CONTROL_H).clicked() {
           action = Some(SettingsAction::SignIn);
         }
       },
